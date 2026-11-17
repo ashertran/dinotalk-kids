@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DinoTalk Kids — Học Sâu Tự Nhiên Cùng AI Agent Bobo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Quicksand:wght@600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css?v=4" />
+</head>
+<body>
+
+<div class="app">
+  <!-- Header -->
+  <header class="header">
+    <div class="brand">
+      <div class="dino-logo">🦖</div>
+      <div class="brand-text">
+        <span>DinoTalk</span>
+        <small class="brand-sub">Natural AI English</small>
+      </div>
+    </div>
+    <div class="header-right">
+      <button class="profile-pill" id="authProfileBtn" onclick="openAuthModal()">🔐 <span id="authProfileLabel" data-i18n="btn_login_short">Đăng nhập</span></button>
+      <div class="star-badge">⭐ <span id="starCount">0</span></div>
+      <div class="lang-pill">
+        <button class="lang-btn active" id="langBtnVi" onclick="setLang('vi')">🇻🇳 VI</button>
+        <button class="lang-btn" id="langBtnEn" onclick="setLang('en')">🇬🇧 EN</button>
+      </div>
+      <button class="circle-btn" id="camCheckBtn" onclick="openCamPermModal(true)">📷</button>
+      <button class="circle-btn" id="soundBtn" onclick="toggleSound()">🔊</button>
+    </div>
+  </header>
+
+  <!-- Main Navigation -->
+  <nav class="nav nav-4">
+    <button class="nav-btn active" id="tabChat" onclick="switchTab('chat')" data-i18n="tab_chat">💬 Trò Chuyện</button>
+    <button class="nav-btn" id="tabRace" onclick="switchTab('race')" data-i18n="tab_race">🏆 Thi Đua</button>
+    <button class="nav-btn" id="tabTopics" onclick="switchTab('topics')" data-i18n="tab_topics">✨ Sáng Tạo Chủ Đề</button>
+    <button class="nav-btn" id="tabParent" onclick="switchTab('parent')" data-i18n="tab_parent">📊 Phụ Huynh</button>
+  </nav>
+
+  <!-- TAB 1: CHAT, AI AGENT & VIDEO CALL -->
+  <main class="screen" id="screenChat">
+    <div class="mode-strip">
+      <button class="mode-pill active" id="modeAiBtn" onclick="setChatMode('ai')" data-i18n="mode_ai">🦖 Bạn Thân Bobo AI</button>
+      <button class="mode-pill" id="modeOnlineBtn" onclick="setChatMode('online')" data-i18n="mode_online">👫 Giao Lưu Với Bạn</button>
+      <button class="spark-pill" id="sparkScenarioBtn" onclick="sparkRandomScenario()" title="Đổi tình huống nhập vai ngẫu nhiên">🎲 <span data-i18n="btn_spark">Tình huống bất ngờ</span></button>
+      <button class="auto-mic-pill" id="autoMicBtn" onclick="toggleAutoMic()">🎙️ <span data-i18n="auto_mic">Tự nghe: OFF</span></button>
+    </div>
+
+    <div class="topic-strip" id="topicBar"></div>
+
+    <!-- Online Room Panel -->
+    <section class="room-bar hidden" id="onlinePanel">
+      <div class="row space-between">
+        <strong class="room-heading" data-i18n="room_title">🌐 Phòng Bạn Bè (4 Số)</strong>
+        <span id="onlineStatus" class="status-text">⚪ Chưa vào phòng</span>
+      </div>
+
+      <div class="row" id="roomJoinControls">
+        <input type="text" id="myNickInput" value="Minh" class="input-nick" />
+        <button class="btn btn-blue" onclick="createRoom()" data-i18n="btn_create_room">🏠 Tạo Phòng</button>
+        <input type="text" id="joinCodeInput" maxlength="4" inputmode="numeric" placeholder="1234" class="input-code" />
+        <button class="btn btn-green" onclick="joinRoom()" data-i18n="btn_join_room">🚪 Vào</button>
+      </div>
+
+      <div class="row space-between hidden" id="inRoomRow">
+        <div class="row">
+          <span class="bold-label" data-i18n="room_code_label">Mã phòng:</span>
+          <span class="code-box" id="myRoomCode">----</span>
+        </div>
+        <button class="btn btn-coral" onclick="leaveRoom()" data-i18n="btn_leave_room">🚪 Rời Phòng</button>
+      </div>
+
+      <div class="row hidden" id="connectedActionsRow">
+        <button class="btn btn-purple" id="videoCallBtn" onclick="startVideoCall()" data-i18n="btn_video_call">📹 Gọi Video</button>
+        <button class="btn btn-yellow" onclick="sendRaceInvite()" data-i18n="btn_invite_race">🏆 Mời Thi Đua!</button>
+      </div>
+    </section>
+
+    <!-- 1-Screen Split Camera (Bạn | Đối phương) -->
+    <section class="video-stage hidden" id="videoStage">
+      <div class="video-status-bar">
+        <span id="videoStatusText">🟡 Đang kết nối Video...</span>
+      </div>
+      <div class="split-camera-screen">
+        <div class="cam-pane mine">
+          <video id="localVideo" autoplay muted playsinline webkit-playsinline></video>
+          <div class="cam-tag" id="localCamTag" data-i18n="cam_you_label">📹 Bạn (Gửi sang đối phương)</div>
+        </div>
+        <div class="cam-pane theirs">
+          <video id="remoteVideo" autoplay playsinline webkit-playsinline></video>
+          <div class="cam-tag" id="remoteVideoLabel">📹 Đối phương (Hiển thị bên bạn)</div>
+        </div>
+      </div>
+      <div class="row center">
+        <button class="btn btn-yellow hidden" id="unmuteVideoBtn" onclick="unmuteRemoteVideo()">🔊 Bật Tiếng</button>
+        <button class="btn btn-soft" id="toggleMicTrackBtn" onclick="toggleMediaTrack('audio')">🎤 Mic ON</button>
+        <button class="btn btn-soft" id="toggleCamTrackBtn" onclick="toggleMediaTrack('video')">📷 Cam ON</button>
+        <button class="btn btn-soft" id="flipCamBtn" onclick="switchCamera()" data-i18n="btn_flip_cam">🔄 Đổi Cam</button>
+        <button class="btn btn-coral" onclick="endVideoCall(true)" data-i18n="btn_end_call">📵 Tắt Video</button>
+      </div>
+    </section>
+    
+    <!-- Deep Natural Grammar Discovery Spotlight -->
+    <div class="grammar-bar">
+      <div class="grammar-bar-content">
+        <span class="deep-badge">🧠 Hiểu Sâu</span>
+        <strong class="grammar-title" id="grammarTitle">Giao tiếp tự nhiên</strong>
+        <span class="grammar-sep">•</span>
+        <span id="grammarExample" class="grammar-example"></span>
+      </div>
+      <button class="btn btn-soft btn-mini" onclick="speakGrammar()" title="Nghe phát âm mẫu">🔊 Mẫu</button>
+    </div>
+
+    <!-- Chat Messages -->
+    <div class="chat-box" id="chatBox"></div>
+
+    <!-- Word Tap Dictionary Toast -->
+    <div class="word-toast" id="wordToast">
+      <span id="wordToastText"></span>
+      <button class="btn btn-soft btn-xs" onclick="document.getElementById('wordToast').style.display='none'">✕</button>
+    </div>
+
+    <div class="tip-toast" id="feedbackBanner"></div>
+    <div class="hint-tray hidden" id="dynamicHintsRow"></div>
+
+    <!-- Speak Dock -->
+    <div class="speak-dock">
+      <button class="big-mic-btn" id="micBtn" onclick="toggleMic('chat')">🎤 <span data-i18n="btn_speak_big">BẤM ĐỂ NÓI BẤT CỨ ĐIỀU GÌ BÉ THÍCH</span></button>
+      <div class="row">
+        <button class="btn btn-yellow btn-hint" id="hintToggleBtn" onclick="toggleDynamicHints()">💡 <span data-i18n="btn_hint">Gợi ý ý tưởng</span></button>
+        <input type="text" id="textInput" class="input-chat" onkeydown="if(event.key==='Enter') sendChat()" />
+        <button class="btn btn-blue" onclick="sendChat()" data-i18n="btn_send">Gửi 🚀</button>
+      </div>
+    </div>
+  </main>
+
+  <!-- TAB 2: RACE GAME -->
+  <section class="screen hidden" id="screenRace">
+    <div class="race-wrap">
+      <div class="track-board">
+        <div class="track-lane">
+          <div class="lane-name" id="raceMyLabel">🧒 Bạn</div>
+          <div class="lane-rail"><div class="lane-runner" id="raceMyRunner">🏃</div></div>
+          <div class="lane-pts" id="raceMyScore">0</div>
+        </div>
+        <div class="track-lane">
+          <div class="lane-name" id="raceRivalLabel">🦖 Bobo</div>
+          <div class="lane-rail"><div class="lane-runner" id="raceRivalRunner">🦖</div></div>
+          <div class="lane-pts rival" id="raceRivalScore">0</div>
+        </div>
+      </div>
+      <div class="timer-track"><div class="timer-fill" id="raceTimerBar"></div></div>
+      <div class="race-card" id="raceStage"></div>
+    </div>
+  </section>
+
+  <!-- TAB 3: CUSTOM TOPIC -->
+  <section class="screen hidden" id="screenTopics">
+    <div class="topic-form-wrap">
+      <div class="card-box">
+        <h3 class="card-heading" data-i18n="create_title">✨ Tạo Thế Giới Trò Chuyện Bé Yêu Thích</h3>
+        <div>
+          <label class="field-label" data-i18n="create_name_lbl">1. Bé muốn trò chuyện hoặc đóng vai về chủ đề gì? (VD: Minecraft, Công chúa, Khủng long bạo chúa, Đá bóng...)</label>
+          <input type="text" id="customTopicName" class="full-width" placeholder="⚽ Đá bóng / 🐉 Thế giới Rồng / 🎮 Minecraft..." />
+        </div>
+        <div>
+          <label class="field-label" data-i18n="create_grammar_lbl">2. Hướng tiếp thu ngữ pháp tự nhiên</label>
+          <select id="customGrammar" class="full-width">
+            <option value="free">🌟 Phản xạ Tự Do & Mở Rộng Câu Tự Nhiên (Khuyên dùng)</option>
+            <option value="like">💬 Chia sẻ Cảm xúc & Sở thích (love, like, enjoy, prefer...)</option>
+            <option value="can">🦸 Miêu tả Đặc điểm & Siêu năng lực (has, can, is able to...)</option>
+            <option value="ing">🎬 Tường thuật Hành động đang diễn ra (am / is / are + V-ing)</option>
+            <option value="past">📖 Kể chuyện Kỷ niệm & Quá khứ (went, saw, played, discovered...)</option>
+          </select>
+        </div>
+        <div>
+          <label class="field-label" data-i18n="create_kw_lbl">3. Chi tiết hoặc nhân vật bé muốn đưa vào (không bắt buộc)</label>
+          <input type="text" id="customKeywords" class="full-width" placeholder="VD: siêu tốc độ, kho báu, bạn thân..." />
+        </div>
+        <button class="btn btn-purple" id="createTopicBtn" onclick="createCustomTopic()" data-i18n="btn_create_topic">✨ Khám Phá Ngay Cùng Bobo!</button>
+      </div>
+
+      <div class="card-box">
+        <div class="row space-between">
+          <strong data-i18n="my_topics_lbl">📚 Chủ Đề Bé Đã Tạo</strong>
+          <button class="btn btn-coral btn-sm hidden" id="deleteAllTopicsBtn" onclick="deleteAllCustomTopics()" data-i18n="btn_delete_all">🗑️ Xóa tất cả</button>
+        </div>
+        <div id="customTopicList" class="custom-list"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TAB 4: PARENT DASHBOARD & LEARNING BEHAVIOR ANALYTICS -->
+  <section class="screen hidden" id="screenParent">
+    <div class="parent-wrap">
+      <!-- Top Profile & Backend Connection Banner -->
+      <div class="card-box parent-hero">
+        <div class="row space-between">
+          <div class="row">
+            <div class="kid-avatar-badge" id="dashKidAvatar">🦖</div>
+            <div>
+              <h3 class="card-heading" id="dashKidTitle">Hồ sơ Bé: Minh (6-8 tuổi)</h3>
+              <div class="dash-sub" id="dashBackendStatus">🟡 Chế độ Local (Đăng nhập để đồng bộ PostgreSQL + pgvector)</div>
+            </div>
+          </div>
+          <div class="row">
+            <button class="btn btn-blue btn-sm" onclick="openAuthModal()" id="dashAuthBtn" data-i18n="btn_account">🔐 Tài khoản</button>
+            <button class="btn btn-soft btn-sm" onclick="refreshParentDashboard()" data-i18n="btn_refresh">🔄 Làm mới</button>
+            <button class="btn btn-coral btn-sm hidden" id="dashLogoutBtn" onclick="logoutParent()" data-i18n="btn_logout">🚪 Thoát</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4 KPI Metrics -->
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-label" data-i18n="kpi_speak">🎤 Lượt Luyện Nói (7 ngày)</div>
+          <div class="kpi-val blue" id="dashSpeakCount">0</div>
+          <div class="kpi-note" id="dashGrammarAcc">Chưa có dữ liệu câu</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label" data-i18n="kpi_hint">💡 Tỷ Lệ Bấm Gợi Ý</div>
+          <div class="kpi-val yellow" id="dashHintRate">0%</div>
+          <div class="kpi-note" id="dashHintDetail">0 lần mở gợi ý</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label" data-i18n="kpi_lookup">📖 Tra Từ & Dịch Câu</div>
+          <div class="kpi-val purple" id="dashLookupCount">0</div>
+          <div class="kpi-note" id="dashLookupDetail">0 từ • 0 dịch câu</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label" data-i18n="kpi_cefr">🧠 Trình Độ & Điều Phối AI</div>
+          <div class="kpi-val green" id="dashCefrBadge">CEFR A0</div>
+          <div class="kpi-note" id="dashAdaptiveNote">Tự động câu ngắn 4-7 từ</div>
+        </div>
+      </div>
+
+      <!-- Skill Mastery (Spaced Repetition SRS) -->
+      <div class="card-box">
+        <div class="row space-between">
+          <strong class="card-heading" data-i18n="dash_mastery_title">🎯 Mức Thành Thạo Ngữ Pháp (Spaced Repetition)</strong>
+          <span class="badge-pill" id="dashWeakSummary">Đang phân tích...</span>
+        </div>
+        <div id="dashSkillList" class="skill-list"></div>
+      </div>
+
+      <!-- Recent Learning Behavior Events -->
+      <div class="card-box">
+        <div class="row space-between">
+          <strong class="card-heading" data-i18n="dash_events_title">🕒 Nhật Ký Hành Vi Học & Agent Harness Gần Đây</strong>
+          <span style="font-size:0.8rem; color:var(--muted);" id="dashLastSync">Cập nhật tức thì</span>
+        </div>
+        <div id="dashEventList" class="event-list"></div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- Parent / Kid Auth Modal (Login & Register) -->
+<div class="modal-bg hidden" id="authModal">
+  <div class="modal auth-modal">
+    <div class="modal-emoji">👨‍👩‍👧🦖</div>
+    <h2 class="modal-title purple" id="authModalTitle" data-i18n="auth_modal_title">Tài Khoản Phụ Huynh & Hồ Sơ Bé</h2>
+    <p class="modal-desc" data-i18n="auth_modal_desc">
+      Đăng nhập để lưu tiến độ học vào PostgreSQL, kích hoạt RAG nhớ lỗi ngữ pháp của riêng bé và xem báo cáo Phụ huynh!
+    </p>
+
+    <div class="auth-tabs">
+      <button class="auth-tab active" id="authTabLogin" onclick="switchAuthMode('login')" data-i18n="auth_tab_login">🔑 Đăng Nhập</button>
+      <button class="auth-tab" id="authTabRegister" onclick="switchAuthMode('register')" data-i18n="auth_tab_register">✨ Tạo Tài Khoản Mới</button>
+    </div>
+
+    <div class="auth-form">
+      <div class="auth-field">
+        <label>📧 Email của Phụ huynh</label>
+        <input type="email" id="authEmailInput" class="full-width" placeholder="parent@example.com" />
+      </div>
+      <div class="auth-field">
+        <label>🔒 Mật khẩu</label>
+        <input type="password" id="authPasswordInput" class="full-width" placeholder="••••••••" onkeydown="if(event.key==='Enter') submitAuthForm()" />
+      </div>
+
+      <div id="authRegisterFields" class="auth-extra-fields hidden">
+        <div class="auth-field">
+          <label>🧒 Tên ở nhà của Bé (Nickname)</label>
+          <input type="text" id="authKidNickInput" class="full-width" value="Minh" placeholder="VD: Minh, Bắp, Sóc..." />
+        </div>
+        <div class="row">
+          <div class="auth-field" style="flex:1;">
+            <label>🎂 Độ tuổi</label>
+            <select id="authAgeBandSelect" class="full-width">
+              <option value="6-8">6 - 8 tuổi</option>
+              <option value="9-11">9 - 11 tuổi</option>
+            </select>
+          </div>
+          <div class="auth-field" style="flex:1;">
+            <label>📈 Trình độ CEFR</label>
+            <select id="authCefrSelect" class="full-width">
+              <option value="A0">A0 (Mới bắt đầu)</option>
+              <option value="A1">A1 (Giao tiếp cơ bản)</option>
+              <option value="A2">A2 (Nói câu dài)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="auth-field">
+        <label style="font-size:0.78rem; color:var(--muted);">🌐 Backend API Server URL</label>
+        <input type="text" id="authApiUrlInput" class="full-width input-sm" value="http://localhost:4000" />
+      </div>
+
+      <div id="authResultMsg" class="cam-test-result"></div>
+
+      <div class="row center" style="margin-top:8px;">
+        <button class="btn btn-purple btn-lg" id="authSubmitBtn" onclick="submitAuthForm()">🚀 Đăng Nhập Ngay</button>
+        <button class="btn btn-soft" onclick="closeAuthModal()" data-i18n="btn_close">Đóng</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Camera Permission Modal -->
+<div class="modal-bg hidden" id="camPermModal">
+  <div class="modal">
+    <div class="modal-emoji">📸🎤</div>
+    <h2 class="modal-title blue" data-i18n="cam_modal_title">Cho Phép Camera & Micro!</h2>
+    <p id="camPermDesc" class="modal-desc" data-i18n="cam_modal_desc">
+      Để bé nói tiếng Anh và gọi Video thấy mặt bạn bè, hãy bấm nút bên dưới rồi chọn "Cho phép (Allow)" nhé!
+    </p>
+    <div id="camTestResult" class="cam-test-result"></div>
+    <div class="row center">
+      <button class="btn btn-green btn-lg" id="camAllowBtn" onclick="requestCameraPermission()" data-i18n="cam_btn_allow">✅ Bật & Kiểm Tra Camera</button>
+      <button class="btn btn-soft" onclick="dismissCamPermModal()" data-i18n="cam_btn_later">Để Sau</button>
+    </div>
+  </div>
+</div>
+
+<!-- Race Invite Modal -->
+<div class="modal-bg hidden" id="inviteModal">
+  <div class="modal">
+    <div class="modal-emoji">🏆⚡</div>
+    <h2 class="modal-title purple" data-i18n="invite_title">Lời Mời Thi Đua!</h2>
+    <p id="inviteText" class="modal-invite-text"></p>
+    <div class="row center">
+      <button class="btn btn-green btn-lg" onclick="acceptRaceInvite()" data-i18n="btn_accept_race">✅ Chơi Luôn!</button>
+      <button class="btn btn-soft" onclick="declineRaceInvite()" data-i18n="btn_decline_race">❌ Để Sau</button>
+    </div>
+  </div>
+</div>
+
+<!-- Incoming Video Call Modal -->
+<div class="modal-bg hidden" id="incomingCallModal">
+  <div class="modal">
+    <div class="modal-emoji">📹📞</div>
+    <h2 class="modal-title blue" data-i18n="incoming_call_title">Cuộc Gọi Video Đến!</h2>
+    <p id="incomingCallText" class="modal-invite-text"></p>
+    <div class="row center">
+      <button class="btn btn-green btn-lg" onclick="acceptIncomingCall()" data-i18n="btn_answer_call">✅ Nghe Máy</button>
+      <button class="btn btn-coral" onclick="rejectIncomingCall()" data-i18n="btn_reject_call">❌ Từ Chối</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/mqtt@5.15.2/dist/mqtt.min.js"></script>
+<script src="./app.js?v=4"></script>
+</body>
+</html>

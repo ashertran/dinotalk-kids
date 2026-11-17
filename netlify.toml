@@ -1,0 +1,10 @@
+[build]
+  publish = "."
+  command = "echo 'Static frontend ready for Netlify deploy'"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Permissions-Policy = "camera=(self), microphone=(self)"
+    X-Frame-Options = "SAMEORIGIN"
+    X-Content-Type-Options = "nosniff"

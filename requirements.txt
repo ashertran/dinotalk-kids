@@ -1,0 +1,26 @@
+# =====================================================================
+# DinoTalk Kids — Library Requirements
+# =====================================================================
+# LƯU Ý:
+# 1. Backend chính (dinotalk-backend/) viết bằng Node.js (Express + pg).
+#    Để cài thư viện cho Node.js Backend, hãy chạy:
+#      cd dinotalk-backend && npm install
+#
+#    Các thư viện Node.js được cài qua package.json gồm:
+#      - express@^4.21.0       (REST API Server)
+#      - pg@^8.13.0            (PostgreSQL & pgvector client)
+#      - jsonwebtoken@^9.0.2   (Xác thực JWT Phụ huynh / Bé)
+#      - cors@^2.8.5           (Cho phép Frontend gọi API)
+#      - dotenv@^16.4.5        (Đọc biến môi trường từ file .env)
+#
+# 2. Nếu bạn dùng Python để chạy script kiểm thử API, nạp dữ liệu RAG
+#    hoặc tích hợp dịch vụ Python phụ trợ, cài đặt file này bằng lệnh:
+#      pip install -r requirements.txt
+# =====================================================================
+
+requests>=2.31.0
+httpx>=0.27.0
+python-dotenv>=1.0.1
+psycopg2-binary>=2.9.9
+pgvector>=0.3.2
+PyJWT>=2.8.0
