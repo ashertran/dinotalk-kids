@@ -1,5 +1,7 @@
 # 🦖 DinoTalk Kids — Production AI English Learning Platform
 
+[![Netlify Status](https://api.netlify.com/api/v1/badges/bff3a876-d812-42b7-9c22-c900109ea22c/deploy-status)](https://app.netlify.com/projects/bong-gon-talk/deploys)
+
 Hệ thống học tiếng Anh giao tiếp AI, Thi Đua Thời Gian Thực (MQTT), Gọi Video 2 Chiều (WebRTC Split-Camera) và Phân Tích Hành Vi Học Ngôn Ngữ (PostgreSQL + `pgvector` RAG + Agent Harness) dành cho trẻ em 6–11 tuổi.
 
 ---
