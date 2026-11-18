@@ -1,5 +1,6 @@
 [build]
-  publish = "."
+  base = "/"
+  publish = "apps/web"
   command = "echo 'Static frontend ready for Netlify deploy'"
 
 [[headers]]

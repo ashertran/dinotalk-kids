@@ -1,0 +1,15 @@
+{
+  "name": "dinotalk-kids",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/server",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w apps/server",
+    "start": "npm start -w apps/server",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down"
+  }
+}

@@ -4,106 +4,78 @@ Hệ thống học tiếng Anh giao tiếp AI, Thi Đua Thời Gian Thực (MQTT
 
 ---
 
-## 🏗️ 1. Kiến trúc hệ thống
+## 🏗️ 1. Kiến trúc hệ thống (npm workspaces monorepo)
 
 ```text
 dinotalk-kids/
-├── index.html                  # Giao diện chính (Chat AI, Phòng 4 Số, Split-Camera, Thi Đua, Chủ Đề, Phụ Huynh)
-├── styles.css                  # Giao diện hoạt hình thân thiện cho trẻ 6–11 tuổi + Responsive Mobile
-├── app.js                      # Logic Frontend + WebRTC + MQTT + Local/Cloud Behavior Engine
-├── requirements.txt            # Danh sách thư viện (hỗ trợ Python/Script & tham chiếu thư viện hệ thống)
-├── README.md                   # Hướng dẫn cài đặt và vận hành toàn hệ thống
-└── dinotalk-backend/           # Production Backend (Node.js + Express + PostgreSQL + pgvector)
-    ├── docker-compose.yml      # Khởi chạy PostgreSQL 16 + pgvector trong 1 lệnh
-    ├── package.json            # Khai báo thư viện Node.js (npm install)
-    ├── requirements.txt        # Danh sách thư viện cài đặt
-    ├── .env.example            # Mẫu cấu hình biến môi trường
-    ├── db/
-    │   └── schema.sql          # Toàn bộ bảng PostgreSQL + HNSW Vector Index (768d) + Seed RAG
-    └── src/
-        ├── db.js               # Kết nối Pool PostgreSQL
-        ├── auth.js             # Đăng ký / Đăng nhập Phụ huynh + Hồ sơ Bé + JWT
-        ├── behavior.js         # Phân tích hành vi học, phát hiện lỗi ngữ pháp & Spaced Repetition (SRS)
-        ├── rag.js              # Nhúng vector (gemini-embedding-001) & truy vấn pgvector
-        ├── harness.js          # Input/Output Guardrails (chặn từ xấu, ẩn PII, ép chuẩn JSON Schema) & Trace Log
-        ├── orchestrator.js     # Bộ não điều phối Agent + Adaptive CEFR (A0→A2) + RAG + Memory
-        └── server.js           # Express REST API Server
+├── package.json                 # Root workspace (npm run dev / db:up / db:down)
+├── docker-compose.yml           # PostgreSQL 16 + pgvector (tự chạy apps/server/db/schema.sql)
+├── .env.example                 # Mẫu biến môi trường (copy thành .env ở root)
+├── netlify.toml                 # Deploy tĩnh apps/web lên Netlify
+├── requirements.txt             # Thư viện Python tuỳ chọn (script test / nạp dữ liệu)
+├── apps/
+│   ├── web/                     # Frontend tĩnh (vanilla JS, không cần build)
+│   │   ├── index.html           # Chat AI, Phòng 4 Số, Split-Camera, Thi Đua, Chủ Đề, Phụ Huynh
+│   │   └── src/
+│   │       ├── app.js           # Logic Frontend + WebRTC + MQTT + Local/Cloud Behavior Engine
+│   │       └── styles/main.css  # Giao diện hoạt hình cho trẻ 6–11 tuổi + Responsive
+│   └── server/                  # Backend Node.js (Express + PostgreSQL + pgvector)
+│       ├── db/schema.sql        # Schema duy nhất (idempotent) + HNSW index + seed RAG
+│       └── src/
+│           ├── app.js           # Express REST API + phục vụ apps/web
+│           ├── config/env.js    # Nạp .env + cấu hình tập trung (JWT, Gemini, Worker URL)
+│           ├── db/pool.js       # Pool PostgreSQL, tự khởi tạo DB local & chạy schema.sql
+│           ├── agent/
+│           │   ├── orchestrator.js  # Bộ não Agent + Adaptive CEFR (A0→A2) + RAG + Memory
+│           │   └── harness.js       # Guardrails Input/Output + Trace Log
+│           └── services/
+│               ├── auth.service.js      # Đăng ký / Đăng nhập Phụ huynh + Hồ sơ Bé + JWT
+│               ├── behavior.service.js  # Phân tích hành vi, lỗi ngữ pháp & SRS
+│               └── rag.service.js       # Embedding (gemini-embedding-001) & truy vấn pgvector
+└── packages/
+    └── shared/                  # @dinotalk/shared — hằng số dùng chung (skill tags, CEFR, model mặc định)
 ```
 
 ---
 
-## 📦 2. Cài đặt thư viện (Install Libraries)
+## 📦 2. Cài đặt
 
-### A. Cài đặt thư viện cho Backend (Node.js — Chính)
-Backend sử dụng **Node.js (ES Modules)**, danh sách thư viện nằm trong `dinotalk-backend/package.json` (`express`, `pg`, `jsonwebtoken`, `cors`, `dotenv`):
+Yêu cầu Node.js ≥ 20.6 và Docker Desktop (hoặc PostgreSQL local).
 
 ```bash
-cd dinotalk-backend
-npm install
+npm install          # Cài toàn bộ workspace từ thư mục root
+cp .env.example .env # Điền GEMINI_API_KEY và JWT_SECRET (openssl rand -hex 32)
 ```
 
-### B. Cài đặt qua `requirements.txt` (Nếu dùng môi trường Python / Chạy Web Server tĩnh / Công cụ test)
-Trên macOS (`zsh`), dùng `python3 -m pip` hoặc `pip3` (thay vì `pip`):
+Thư viện Python (tuỳ chọn, chỉ cho script phụ trợ):
 
 ```bash
-python3 -m pip install -r requirements.txt
-# Hoặc dùng môi trường ảo (khuyên dùng trên macOS):
 python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
 ```
 
 ---
 
-## 🚀 3. Hướng dẫn chạy toàn bộ hệ thống (Step-by-Step)
-
-### Bước 1: Khởi chạy Database PostgreSQL 16 + `pgvector`
-Yêu cầu máy đã bật **Docker Desktop**:
+## 🚀 3. Chạy hệ thống
 
 ```bash
-cd dinotalk-backend
-docker compose up -d
-```
-> Lệnh này sẽ tự động tải image `pgvector/pgvector:pg16`, mở cổng `5432` và tự động chạy file `db/schema.sql` để tạo toàn bộ bảng + dữ liệu mẫu RAG.
-
-### Bước 2: Cấu hình biến môi trường (`.env`)
-Trong thư mục `dinotalk-backend/`, copy file `.env.example` thành `.env`:
-
-```bash
-cp .env.example .env
+npm run db:up   # Bước 1: PostgreSQL 16 + pgvector (cổng 5432)
+npm run dev     # Bước 2: API + Web UI tại http://localhost:4000
 ```
 
-Mở file `dinotalk-backend/.env` và điền `GEMINI_API_KEY` của bạn:
+- Kiểm tra nhanh: `http://localhost:4000/api/health`
+- Server tự phục vụ giao diện `apps/web`, nên mở luôn **`http://localhost:4000`** là dùng được.
+- Không có Docker? Server sẽ tự tạo role/database trên PostgreSQL local (role app không có quyền SUPERUSER) và chuyển sang chế độ vector JSONB nếu thiếu `pgvector`.
+- Chỉ chạy frontend tĩnh: `npx serve -l 8080 apps/web` (frontend gọi API tại `http://localhost:4000` khi chạy localhost).
 
-```env
-PORT=4000
-DATABASE_URL=postgresql://dinotalk:dinotalk_secret_password@localhost:5432/dinotalk_db
-JWT_SECRET=thay-bang-chuoi-bi-mat-dai-hon-32-ky-tu
-GEMINI_API_KEY=AIzaSy_KEY_CUA_BAN
-GEMINI_CHAT_MODEL=gemini-2.5-flash-lite
-GEMINI_EMBED_MODEL=gemini-embedding-001
-```
+Biến môi trường chính (`.env` ở root, hoặc `apps/server/.env` để ghi đè):
 
-### Bước 3: Khởi động API Backend Server
-```bash
-cd dinotalk-backend
-npm run dev
-```
-Khi thành công, terminal sẽ hiển thị:
-```text
-DinoTalk Backend running at http://localhost:4000
-```
-Kiểm tra nhanh trạng thái Database tại: `http://localhost:4000/api/health`
-
-### Bước 4: Mở giao diện Frontend (`index.html`)
-Mở một terminal mới tại thư mục gốc `dinotalk-kids/` và chạy 1 trong 2 lệnh sau:
-
-```bash
-# Cách 1: Dùng Python (có sẵn trên macOS/Linux)
-python3 -m http.server 8080
-
-# Cách 2: Dùng Node npx
-npx serve -l 8080 .
-```
-Sau đó mở trình duyệt tại địa chỉ: **`http://localhost:8080`**
+| Biến | Ý nghĩa |
+| :--- | :--- |
+| `DATABASE_URL` | Chuỗi kết nối PostgreSQL |
+| `JWT_SECRET` | Bắt buộc ≥ 32 ký tự khi `NODE_ENV=production` |
+| `GEMINI_API_KEY` | Key Gemini (chat + embedding) |
+| `GEMINI_CHAT_MODEL` / `GEMINI_EMBED_MODEL` | Model chat / embedding |
+| `CLOUD_WORKER_URL` | LLM fallback tầng 2 (để trống để tắt) |
 
 ---
 
