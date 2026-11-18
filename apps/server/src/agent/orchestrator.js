@@ -3,10 +3,49 @@ import { config } from "../config/env.js";
 import { pool } from "../db/pool.js";
 import { detectGrammarSignals, getBehaviorSnapshot, recordBehaviorEvent } from "../services/behavior.service.js";
 import { retrieveRagContext, saveKidMemory } from "../services/rag.service.js";
-import { logAgentTrace, runInputGuardrail, runOutputGuardrail } from "./harness.js";
+import { logAgentTrace, parseAgentJson, runInputGuardrail, runOutputGuardrail } from "./harness.js";
 
 const CHAT_MODEL = config.chatModel || DEFAULT_CHAT_MODEL;
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+// Structured output: Gemini bị ép trả JSON hợp lệ đúng khuôn này. Trước đây model tự viết JSON nên thỉnh thoảng
+// hỏng cú pháp → guardrail vứt câu trả lời của LLM và thay bằng câu mẫu soạn sẵn ("Bobo không thông minh").
+// Giữ schema PHẲNG: object lồng nullable (newTopic cũ) làm model lặp vô hạn tới MAX_TOKENS (2-3 phút/câu).
+const BOBO_FIELDS = [
+  "reply", "translationVi", "sentenceGrammar", "vocab", "grammarTip", "bonusStars", "suggestions",
+  "newTopicLabel", "newTopicGrammar", "newTopicExample", "kidFact"
+];
+const BOBO_RESPONSE_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    reply: { type: "STRING" },
+    translationVi: { type: "STRING" },
+    sentenceGrammar: { type: "STRING" },
+    vocab: {
+      type: "ARRAY",
+      maxItems: 4,
+      items: {
+        type: "OBJECT",
+        properties: { word: { type: "STRING" }, meaningVi: { type: "STRING" } },
+        required: ["word", "meaningVi"]
+      }
+    },
+    grammarTip: { type: "STRING" },
+    bonusStars: { type: "INTEGER" },
+    suggestions: { type: "ARRAY", minItems: 3, maxItems: 3, items: { type: "STRING" } },
+    newTopicLabel: { type: "STRING" },
+    newTopicGrammar: { type: "STRING" },
+    newTopicExample: { type: "STRING" },
+    kidFact: { type: "STRING" }
+  },
+  required: BOBO_FIELDS,
+  propertyOrdering: BOBO_FIELDS
+};
+
+const GEMINI_ATTEMPT_TIMEOUT_MS = 15000;
+const GEMINI_TOTAL_BUDGET_MS = 30000;
+const RETRYABLE_HTTP = new Set([429, 500, 503, 504]);
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 function classifyIntent(text) {
   if (/(?:muốn nói về|đổi chủ đề|tạo chủ đề|talk about|change topic|new topic)\s+(.+)/i.test(text)) {
@@ -153,32 +192,59 @@ async function callGeminiDirect(systemPrompt, contents) {
   const apiKey = config.geminiApiKey;
   if (!apiKey || apiKey.startsWith("YOUR_")) throw new Error("MISSING_GEMINI_KEY");
 
-  const modelsToTry = [CHAT_MODEL, ...FALLBACK_CHAT_MODELS].filter((v, i, a) => a.indexOf(v) === i);
-  let lastStatus = 500;
+  const deadline = Date.now() + GEMINI_TOTAL_BUDGET_MS;
+  const modelsToTry = [...new Set([CHAT_MODEL, ...FALLBACK_CHAT_MODELS])];
+  const failures = [];
 
   for (const model of modelsToTry) {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          system_instruction: { parts: [{ text: systemPrompt }] },
-          contents,
-          generationConfig: { temperature: 0.85 }
-        })
+    // Model chính được thử lại 1 lần: 503 "high demand" hay output hỏng thường chỉ thoáng qua.
+    const attempts = model === CHAT_MODEL ? 2 : 1;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      const remainingMs = deadline - Date.now();
+      if (remainingMs < 2000) throw new Error(`LLM_BUDGET_EXHAUSTED: ${failures.join(" | ")}`);
+      const tag = `${model}#${attempt}`;
+      try {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            signal: AbortSignal.timeout(Math.min(GEMINI_ATTEMPT_TIMEOUT_MS, remainingMs)),
+            body: JSON.stringify({
+              system_instruction: { parts: [{ text: systemPrompt }] },
+              contents,
+              // Không đặt temperature: Google khuyến nghị giữ mặc định 1.0 cho Gemini 3 (thấp hơn dễ gây lặp).
+              // maxOutputTokens chặn trường hợp lặp vô hạn; câu trả lời bình thường chỉ ~300 token.
+              generationConfig: {
+                responseMimeType: "application/json",
+                responseSchema: BOBO_RESPONSE_SCHEMA,
+                maxOutputTokens: 2048
+              }
+            })
+          }
+        );
+        if (!res.ok) {
+          const detail = (await res.json().catch(() => null))?.error?.message || "";
+          failures.push(`${tag} HTTP ${res.status} ${detail.slice(0, 120)}`.trim());
+          if (!RETRYABLE_HTTP.has(res.status)) break; // 400/403/404: model hoặc key không dùng được → model kế tiếp
+          if (attempt < attempts) await sleep(800);
+          continue;
+        }
+        const json = await res.json();
+        const candidate = json?.candidates?.[0];
+        // Ghép mọi text part (bỏ phần "thought"), không chỉ parts[0]
+        const text = (candidate?.content?.parts || [])
+          .filter(p => !p.thought && typeof p.text === "string")
+          .map(p => p.text)
+          .join("");
+        if (parseAgentJson(text)) return { text, model, failures };
+        failures.push(`${tag} output không dùng được (finishReason=${candidate?.finishReason || json?.promptFeedback?.blockReason || "none"})`);
+      } catch (err) {
+        failures.push(`${tag} ${err.name === "TimeoutError" ? "timeout" : err.message}`);
       }
-    );
-    if (res.ok) {
-      const json = await res.json();
-      return {
-        text: json?.candidates?.[0]?.content?.parts?.[0]?.text || "",
-        model
-      };
     }
-    lastStatus = res.status;
   }
-  throw new Error("LLM_HTTP_" + lastStatus);
+  throw new Error(`LLM_ALL_MODELS_FAILED: ${failures.join(" | ")}`);
 }
 
 async function callCloudWorkerFallback({ topicTitle, grammarTarget, history, userText }) {
@@ -186,6 +252,7 @@ async function callCloudWorkerFallback({ topicTitle, grammarTarget, history, use
   const res = await fetch(config.cloudWorkerUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    signal: AbortSignal.timeout(12000),
     body: JSON.stringify({
       action: "chat",
       topic: `${topicTitle} (Open-ended Play & Deep Natural Acquisition - Follow the child's lead freely!)`,
@@ -264,7 +331,7 @@ export async function orchestrateChat({ kidId, topicId, topicTitle = "Free Disco
 PEDAGOGICAL PHILOSOPHY (Play & Deep Natural Acquisition — NOT rigid drills):
 1. FOLLOW THE CHILD'S LEAD (100% Flexible Topic):
    - Current starting context is "${topicTitle}", but if the child mentions ANY new idea, animal, game, feeling, or story, enthusiastically follow their idea! Never force them back to a script.
-   - If the child asks to change topic or brings up a totally new theme, set "newTopic":{"label":"...","grammarName":"...","example":"..."}.
+   - If the child asks to change topic or brings up a totally new theme, fill "newTopicLabel", "newTopicGrammar" and "newTopicExample"; otherwise leave all three as "".
 2. NATURAL RECASTING (Implicit Grammar Acquisition):
    - If the child makes a grammar mistake (e.g., "I has a dog", "Yesterday I go"), NEVER scold or lecture. Instead, naturally echo the correct form with excitement in your reply (e.g., "Whoa, you HAVE a dog! What tricks can your dog do?").
 3. DEEP UNDERSTANDING ("Học sâu hiểu sâu"):
@@ -282,8 +349,15 @@ ${ragDocsText || "- Use natural, vivid everyday English."}
 - Personal Memory of ${behavior.kid.nickname}:
 ${memText || "- Building first fun memories together."}
 
-Return ONLY valid JSON:
-{"reply":"...","translationVi":"...","sentenceGrammar":"🧠 Hiểu sâu: giải thích bản chất tư duy tiếng Anh ngắn gọn, dễ hiểu","vocab":{"word1":"nghĩa tiếng Việt","word2":"nghĩa tiếng Việt"},"grammarTip":"🌟 lời khen hoặc mẹo nhớ tự nhiên","bonusStars":2,"suggestions":["natural reply 1","creative reply 2","question for Bobo 3"],"newTopic":null}`;
+OUTPUT FIELDS (the JSON structure is enforced by the API — focus on the content):
+- "reply": your English reply to the child.
+- "translationVi": natural Vietnamese translation of "reply".
+- "sentenceGrammar": "🧠 Hiểu sâu: ..." — giải thích bản chất tư duy tiếng Anh ngắn gọn, dễ hiểu (Vietnamese).
+- "vocab": 2-3 key English words from "reply", each with its Vietnamese meaning in "meaningVi".
+- "grammarTip": "🌟 ..." — lời khen hoặc mẹo nhớ tự nhiên (Vietnamese).
+- "bonusStars": 2 (use 1 only if the child's message was a single word or off-task).
+- "suggestions": exactly 3 natural English things the child could say next.
+- "kidFact": a NEW personal fact the child just shared that is worth remembering in future chats (likes, pets, family, hobbies, feelings), as one short English sentence about ${behavior.kid.nickname} that is not already in Personal Memory. Otherwise "".`;
 
   const fallback = buildSmartContextualFallback(cleanText, topicTitle, signals);
 
@@ -294,17 +368,29 @@ Return ONLY valid JSON:
     const llmOut = await callGeminiDirect(systemPrompt, [...history, { role: "user", parts: [{ text: cleanText }] }]);
     raw = llmOut.text;
     modelUsed = llmOut.model;
-  } catch {
+    if (llmOut.failures.length) console.warn(`[Bobo] Gemini OK (${modelUsed}) sau lỗi: ${llmOut.failures.join(" | ")}`);
+  } catch (geminiErr) {
+    console.warn(`[Bobo] Gemini thất bại → thử Cloud Worker: ${geminiErr.message}`);
     try {
       raw = await callCloudWorkerFallback({ topicTitle, grammarTarget, history, userText: cleanText });
       modelUsed = "cloud_ai_worker";
-    } catch {
+    } catch (workerErr) {
+      console.warn(`[Bobo] Cloud Worker thất bại → dùng câu mẫu soạn sẵn: ${workerErr.message}`);
       modelUsed = "contextual_socratic_engine";
     }
   }
 
   const outGuard = runOutputGuardrail(raw, fallback);
-  const result = outGuard.data;
+  if (!outGuard.passed) {
+    // Ghi đúng nguồn câu trả lời bé thực sự nhận (trước đây trace vẫn ghi tên Gemini dù đã thay bằng câu mẫu)
+    if (raw) console.warn(`[Bobo] Guardrail loại output của ${modelUsed} (${outGuard.flags.join(",")}) → dùng câu mẫu soạn sẵn`);
+    modelUsed = "contextual_socratic_engine";
+  }
+  const { kidFact, ...result } = outGuard.data;
+  if (kidFact) {
+    // Ký ức cá nhân (sở thích, thú cưng...) để RAG gợi lại ở các buổi sau; không chặn câu trả lời
+    saveKidMemory(kidId, kidFact, "interest").catch(err => console.warn(`[Bobo] Không lưu được memory: ${err.message}`));
+  }
 
   // Ensure 3 diverse suggestions
   if (!Array.isArray(result.suggestions) || result.suggestions.length < 2) {

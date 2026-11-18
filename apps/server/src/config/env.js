@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
@@ -7,7 +8,25 @@ export const SERVER_ROOT = path.resolve(__dirname, "../..");
 export const REPO_ROOT = path.resolve(SERVER_ROOT, "../..");
 
 // apps/server/.env (nếu có) được ưu tiên, sau đó tới .env ở root monorepo.
-dotenv.config({ path: [path.join(SERVER_ROOT, ".env"), path.join(REPO_ROOT, ".env")] });
+const ENV_FILES = [path.join(SERVER_ROOT, ".env"), path.join(REPO_ROOT, ".env")];
+dotenv.config({ path: ENV_FILES });
+
+// dotenv KHÔNG ghi đè biến đã có sẵn (export trong shell, `launchctl setenv`, IDE...) → giá trị trong .env bị bỏ qua
+// mà không báo gì. Cảnh báo để không lặp lại lỗi: GEMINI_API_KEY cũ (đã hỏng) đặt bằng launchctl thay key mới trong .env.
+const fileValues = {};
+for (const file of ENV_FILES) {
+  if (!fs.existsSync(file)) continue;
+  for (const [key, value] of Object.entries(dotenv.parse(fs.readFileSync(file)))) {
+    if (!(key in fileValues)) fileValues[key] = value;
+  }
+}
+const shadowed = Object.keys(fileValues).filter(key => process.env[key] !== fileValues[key]);
+if (shadowed.length > 0) {
+  console.warn(
+    `⚠️ Biến môi trường của shell đang GHI ĐÈ .env: ${shadowed.join(", ")} — giá trị trong .env bị bỏ qua.\n` +
+    `   Nếu không cố ý: gỡ biến đó (vd. \`unset ${shadowed[0]}\` hoặc \`launchctl unsetenv ${shadowed[0]}\`) rồi mở terminal mới và chạy lại server.`
+  );
+}
 
 const isProd = process.env.NODE_ENV === "production";
 

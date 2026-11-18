@@ -2178,8 +2178,14 @@ async function callAiProxyChat(userText, inputMode = "voice", latencyMs = null) 
           aiHistory.push({ role: "user", parts: [{ text: userText }] }, { role: "model", parts: [{ text: data.reply }] });
           return data;
         }
+      } else {
+        console.warn(`[Bobo] Backend trả HTTP ${res.status} → dùng Cloudflare Worker (không có Gemini key + RAG của .env)`);
       }
-    } catch (e) {}
+    } catch (e) {
+      console.warn(`[Bobo] Không gọi được backend ${AI_CONFIG.PROXY_URL}: ${e.message} → dùng Cloudflare Worker`);
+    }
+  } else {
+    console.warn("[Bobo] Chưa đăng nhập → bỏ qua backend (Gemini key + RAG của .env), gọi thẳng Cloudflare Worker");
   }
 
   // 2. Fallback to Cloudflare Worker Proxy with Socratic & Deep Natural Learning instructions

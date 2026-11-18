@@ -39,11 +39,50 @@ export async function ensureCurriculumEmbeddings() {
   }
 }
 
+function cosineSimilarity(a, b) {
+  let dot = 0, normA = 0, normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  return normA && normB ? dot / Math.sqrt(normA * normB) : 0;
+}
+
+function topBySimilarity(rows, queryVec, k) {
+  return rows
+    .filter(r => Array.isArray(r.embedding) && r.embedding.length === queryVec.length)
+    .map(({ embedding, ...row }) => ({ ...row, similarity: cosineSimilarity(queryVec, embedding) }))
+    .sort((a, b) => b.similarity - a.similarity)
+    .slice(0, k);
+}
+
 // Truy vấn RAG kết hợp Kiến thức ngữ pháp + Ký ức cá nhân của bé
 export async function retrieveRagContext({ kidId, queryText, weakSkills = [] }) {
-  const vec = hasPgVector ? await embedText768(queryText) : null;
+  const vec = await embedText768(queryText);
+
+  if (vec && !hasPgVector) {
+    // Postgres không có pgvector (vd. Homebrew): embedding nằm trong JSONB → xếp hạng cosine ngay trong Node.
+    // Đủ nhanh với giáo trình mẫu + vài trăm ký ức gần nhất của bé.
+    const [docsRes, memRes] = await Promise.all([
+      pool.query(
+        `SELECT id, title, skill_tag, content, example_en, explain_vi, embedding
+         FROM curriculum_docs WHERE embedding IS NOT NULL`
+      ),
+      pool.query(
+        `SELECT id, summary_text, memory_type, embedding
+         FROM kid_memory_vectors
+         WHERE kid_id = $1 AND embedding IS NOT NULL
+         ORDER BY created_at DESC LIMIT 300`,
+        [kidId]
+      )
+    ]);
+    const docs = topBySimilarity(docsRes.rows, vec, 3);
+    if (docs.length > 0) return { docs, memories: topBySimilarity(memRes.rows, vec, 2) };
+  }
+
   if (!vec || !hasPgVector) {
-    // Fallback tìm theo skill yếu hoặc bài học phù hợp
+    // Fallback (không embed được): tìm theo skill yếu hoặc bài học phù hợp
     const tags = weakSkills.map(s => s.skill_tag);
     const fb = await pool.query(
       `SELECT id, title, skill_tag, content, example_en, explain_vi

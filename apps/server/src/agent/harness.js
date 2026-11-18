@@ -24,45 +24,74 @@ export function runInputGuardrail(userText) {
   };
 }
 
-export function runOutputGuardrail(rawText, fallback) {
-  const flags = [];
-  let parsed = null;
-  let rawValidJson = true;
+const isBlocked = text => BLOCKED_PATTERNS.some(rx => rx.test(text));
 
+// Parse JSON của Agent. Trả về object có "reply" không rỗng, hoặc null nếu không dùng được.
+export function parseAgentJson(rawText) {
   try {
     const cleaned = (rawText || "").replace(/```json|```/g, "").trim();
     const match = cleaned.match(/\{[\s\S]*\}/);
-    parsed = JSON.parse(match ? match[0] : cleaned);
+    const parsed = JSON.parse(match ? match[0] : cleaned);
+    return parsed && typeof parsed.reply === "string" && parsed.reply.trim() ? parsed : null;
   } catch {
-    rawValidJson = false;
+    return null;
+  }
+}
+
+// Gemini (responseSchema) trả vocab dạng [{word, meaningVi}], Cloud Worker trả {word: nghĩa}.
+// Frontend tra nghĩa theo từ viết thường → chuẩn hoá về {word: nghĩa}.
+function normalizeVocab(vocab) {
+  const entries = Array.isArray(vocab)
+    ? vocab.map(v => [v?.word, v?.meaningVi])
+    : Object.entries(vocab && typeof vocab === "object" ? vocab : {});
+  return Object.fromEntries(
+    entries
+      .filter(([word, meaning]) => typeof word === "string" && word.trim() && meaning)
+      .map(([word, meaning]) => [word.trim().toLowerCase(), String(meaning)])
+  );
+}
+
+// Gemini trả các trường phẳng newTopicLabel/Grammar/Example; Cloud Worker có thể trả object newTopic.
+function normalizeNewTopic(parsed) {
+  if (parsed.newTopic && parsed.newTopic.label) return parsed.newTopic;
+  const label = typeof parsed.newTopicLabel === "string" ? parsed.newTopicLabel.trim() : "";
+  if (!label) return null;
+  return { label, grammarName: String(parsed.newTopicGrammar || ""), example: String(parsed.newTopicExample || "") };
+}
+
+export function runOutputGuardrail(rawText, fallback) {
+  const flags = [];
+  const parsed = parseAgentJson(rawText);
+  if (!parsed) {
     flags.push("json_repair_fallback");
-    return { data: fallback, flags, rawValidJson, passed: false };
+    return { data: fallback, flags, rawValidJson: false, passed: false };
   }
 
   // Ép chuẩn schema cho trẻ 6+ tuổi
-  const reply = typeof parsed.reply === "string" && parsed.reply.length > 0 ? parsed.reply.slice(0, 360) : fallback.reply;
-  for (const rx of BLOCKED_PATTERNS) {
-    if (rx.test(reply)) {
-      flags.push("output_safety_blocked");
-      return { data: fallback, flags, rawValidJson, passed: false };
-    }
+  const reply = parsed.reply.slice(0, 360);
+  if (isBlocked(reply)) {
+    flags.push("output_safety_blocked");
+    return { data: fallback, flags, rawValidJson: true, passed: false };
   }
+  const kidFact = typeof parsed.kidFact === "string" ? parsed.kidFact.trim().slice(0, 200) : "";
 
   return {
     passed: true,
     flags,
-    rawValidJson,
+    rawValidJson: true,
     data: {
       reply,
       translationVi: String(parsed.translationVi || fallback.translationVi || ""),
       sentenceGrammar: String(parsed.sentenceGrammar || fallback.sentenceGrammar || ""),
-      vocab: typeof parsed.vocab === "object" && parsed.vocab ? parsed.vocab : {},
+      vocab: normalizeVocab(parsed.vocab),
       grammarTip: String(parsed.grammarTip || fallback.grammarTip || "🌟 Great speaking!"),
       bonusStars: parsed.bonusStars === 2 ? 2 : 1,
       suggestions: Array.isArray(parsed.suggestions) && parsed.suggestions.length > 0
         ? parsed.suggestions.slice(0, 3).map(String)
         : fallback.suggestions,
-      newTopic: parsed.newTopic && parsed.newTopic.label ? parsed.newTopic : null
+      newTopic: normalizeNewTopic(parsed),
+      // Ký ức cá nhân cho RAG lần sau; bỏ nếu chứa nội dung không an toàn / prompt injection
+      kidFact: kidFact && !isBlocked(kidFact) ? kidFact : ""
     }
   };
 }
