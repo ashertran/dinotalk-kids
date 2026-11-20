@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Chicken Talk Logo">
+  <defs>
+    <linearGradient id="ctBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFF3B0"/>
+      <stop offset="55%" stop-color="#FFD54F"/>
+      <stop offset="100%" stop-color="#FFB74D"/>
+    </linearGradient>
+    <linearGradient id="ctBody" x1="0.2" y1="0" x2="0.8" y2="1">
+      <stop offset="0%" stop-color="#FFF59D"/>
+      <stop offset="55%" stop-color="#FFD54F"/>
+      <stop offset="100%" stop-color="#FBC02D"/>
+    </linearGradient>
+    <linearGradient id="ctSky" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#9BE0FF"/>
+      <stop offset="100%" stop-color="#73C9F5"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Soft speech-bubble emblem frame -->
+  <rect x="8" y="8" width="112" height="104" rx="34" fill="url(#ctSky)" stroke="#FFFFFF" stroke-width="5"/>
+  <path d="M36 106 L22 121 L54 111 Z" fill="#73C9F5" stroke="#FFFFFF" stroke-width="4" stroke-linejoin="round"/>
+  <rect x="13" y="13" width="102" height="94" rx="29" fill="#FFF9E8"/>
+
+  <!-- Cute mint sparkle accent -->
+  <circle cx="96" cy="29" r="5" fill="#A8E6CF"/>
+  <circle cx="29" cy="34" r="3.5" fill="#FF986A" opacity="0.85"/>
+
+  <!-- Chicky head feather tuft -->
+  <path d="M58 28 C55 17, 65 15, 65 26 C68 17, 77 20, 71 29 C75 24, 80 28, 73 33 Z" fill="#FFD54F" stroke="#E89D24" stroke-width="2" stroke-linejoin="round"/>
+
+  <!-- Chicky feet -->
+  <path d="M52 93 L52 101 M47 101 L56 101 M76 93 L76 101 M72 101 L81 101" stroke="#FF8A4C" stroke-width="4.5" stroke-linecap="round"/>
+
+  <!-- Chicky wings -->
+  <ellipse cx="33" cy="68" rx="11" ry="15" transform="rotate(24 33 68)" fill="#FFCA28" stroke="#E89D24" stroke-width="2"/>
+  <ellipse cx="97" cy="60" rx="11" ry="15" transform="rotate(-38 97 60)" fill="#FFCA28" stroke="#E89D24" stroke-width="2"/>
+
+  <!-- Chicky round chubby body -->
+  <ellipse cx="64" cy="64" rx="32" ry="31" fill="url(#ctBody)" stroke="#E89D24" stroke-width="2.5"/>
+  <!-- Soft cream belly highlight -->
+  <ellipse cx="64" cy="75" rx="19" ry="14" fill="#FFF8D6" opacity="0.72"/>
+
+  <!-- Expressive eyes -->
+  <circle cx="51" cy="57" r="6.2" fill="#2D241E"/>
+  <circle cx="77" cy="57" r="6.2" fill="#2D241E"/>
+  <circle cx="49" cy="54.8" r="2.3" fill="#FFFFFF"/>
+  <circle cx="75" cy="54.8" r="2.3" fill="#FFFFFF"/>
+  <circle cx="53.2" cy="59.2" r="1.1" fill="#FFFFFF"/>
+  <circle cx="79.2" cy="59.2" r="1.1" fill="#FFFFFF"/>
+
+  <!-- Rosy coral cheeks -->
+  <ellipse cx="41" cy="65" rx="6" ry="3.8" fill="#FF986A" opacity="0.58"/>
+  <ellipse cx="87" cy="65" rx="6" ry="3.8" fill="#FF986A" opacity="0.58"/>
+
+  <!-- Happy tiny orange beak -->
+  <path d="M58 63 Q64 59 70 63 Q64 73 58 63 Z" fill="#FF8A4C" stroke="#D96528" stroke-width="1.8" stroke-linejoin="round"/>
+  <path d="M60 64.5 Q64 68 68 64.5" fill="none" stroke="#B84B14" stroke-width="1.4" stroke-linecap="round"/>
+</svg>

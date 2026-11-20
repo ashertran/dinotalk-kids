@@ -17,7 +17,7 @@ function verifyPassword(password, stored) {
   return crypto.timingSafeEqual(Buffer.from(key, "hex"), derived);
 }
 
-export async function registerParent({ email, password, kidNickname = "Minh", ageBand = "6-8", cefrLevel = "A0" }) {
+export async function registerParent({ email, password, kidNickname = "Minh", ageBand = "6-10", cefrLevel = "A0", avatar = "🐥" }) {
   if (!email || !password) throw new Error("Vui lòng nhập email và mật khẩu");
   const client = await pool.connect();
   try {
@@ -29,8 +29,8 @@ export async function registerParent({ email, password, kidNickname = "Minh", ag
     );
     const account = accRes.rows[0];
     const kidRes = await client.query(
-      `INSERT INTO kid_profiles (account_id, nickname, age_band, cefr_level) VALUES ($1, $2, $3, $4) RETURNING *`,
-      [account.id, kidNickname || "Minh", ageBand || "6-8", cefrLevel || "A0"]
+      `INSERT INTO kid_profiles (account_id, nickname, avatar, age_band, cefr_level) VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [account.id, kidNickname || "Minh", avatar || "🐥", ageBand || "6-10", cefrLevel || "A0"]
     );
     await client.query("COMMIT");
     const kid = kidRes.rows[0];

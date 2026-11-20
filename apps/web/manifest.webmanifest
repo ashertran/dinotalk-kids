@@ -1,0 +1,17 @@
+{
+  "name": "Chicken Talk — AI Social English Playground",
+  "short_name": "Chicken Talk",
+  "description": "Play Together. Talk Together. Grow Together. A safe, playful AI-guided English world for children aged 6–10.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#FFF9E8",
+  "theme_color": "#FFD54F",
+  "icons": [
+    {
+      "src": "./assets/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

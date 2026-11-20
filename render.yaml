@@ -1,0 +1,39 @@
+# Render Blueprint: API Node (apps/server) + PostgreSQL.
+# Deploy: Render Dashboard → New → Blueprint → chọn repo này. Schema DB được server tự chạy lúc khởi động (db/schema.sql).
+databases:
+  - name: dinotalk-db
+    databaseName: dinotalk_db
+    user: dinotalk
+    plan: free
+    region: singapore
+
+services:
+  - type: web
+    name: dinotalk-api
+    runtime: node
+    region: singapore
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: dinotalk-db
+          property: connectionString
+      # Render tự sinh chuỗi ngẫu nhiên (>= 32 ký tự) và giữ nguyên qua các lần deploy
+      - key: JWT_SECRET
+        generateValue: true
+      # sync: false → Render hỏi giá trị khi tạo Blueprint, không lưu trong git
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_CHAT_MODEL
+        value: gemini-3.5-flash-lite
+      - key: GEMINI_EMBED_MODEL
+        value: gemini-embedding-001
+      - key: CLOUD_WORKER_URL
+        value: https://rough-fog-375c.ashertran0710.workers.dev

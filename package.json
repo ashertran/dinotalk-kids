@@ -9,7 +9,11 @@
   "scripts": {
     "dev": "npm run dev -w apps/server",
     "start": "npm start -w apps/server",
+    "test": "npm test -w apps/server",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

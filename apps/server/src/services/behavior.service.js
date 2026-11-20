@@ -83,7 +83,7 @@ export async function getBehaviorSnapshot(kidId) {
       [kidId]
     ),
     pool.query(
-      `SELECT intent, route, model_used, latency_ms, guardrail_passed, guardrail_flags, created_at
+      `SELECT intent, route, skills_used, model_used, latency_ms, guardrail_passed, guardrail_flags, created_at
        FROM agent_traces
        WHERE kid_id = $1
        ORDER BY created_at DESC LIMIT 8`,

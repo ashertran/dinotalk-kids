@@ -10,7 +10,9 @@ export const REPO_ROOT = path.resolve(SERVER_ROOT, "../..");
 // apps/server/.env (nếu có) được ưu tiên, sau đó tới .env ở root monorepo.
 // Sử dụng override: true để giá trị trong file .env luôn được ưu tiên hơn các biến shell cũ bị lưu trong máy.
 const ENV_FILES = [path.join(SERVER_ROOT, ".env"), path.join(REPO_ROOT, ".env")];
+const explicitPort = process.env.PORT;
 dotenv.config({ path: ENV_FILES, override: true });
+if (explicitPort) process.env.PORT = explicitPort;
 
 // dotenv KHÔNG ghi đè biến đã có sẵn (export trong shell, `launchctl setenv`, IDE...) → giá trị trong .env bị bỏ qua
 // mà không báo gì. Cảnh báo để không lặp lại lỗi: GEMINI_API_KEY cũ (đã hỏng) đặt bằng launchctl thay key mới trong .env.

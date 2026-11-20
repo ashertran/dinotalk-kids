@@ -1,8 +1,13 @@
 import { pool } from "../db/pool.js";
 
 const BLOCKED_PATTERNS = [
-  /\b(kill|murder|suicide|porn|sex|drugs|weapon|bomb)\b/i,
+  /\b(kill|murder|suicide|porn|sex|drugs|weapon|bomb|gun)\b/i,
   /\b(ignore previous instructions|system prompt|bypass)\b/i
+];
+
+// Detect personal info prompts/answers (child safety guardrail)
+const PII_SOLICITATION_PATTERNS = [
+  /\b(what is your address|where do you live|send me your photo|give me your phone|what school do you go to|tell me your password)\b/i
 ];
 
 export function runInputGuardrail(userText) {
@@ -12,10 +17,13 @@ export function runInputGuardrail(userText) {
   for (const rx of BLOCKED_PATTERNS) {
     if (rx.test(trimmed)) flags.push("unsafe_or_injection");
   }
-  // Che thông tin nhạy cảm (SĐT / email nếu bé lỡ gõ)
+  // Mask accidental sensitive info (phone, email)
   const sanitized = trimmed
-    .replace(/\b0\d{9,10}\b/g, "[phone]")
+    .replace(/\b0\d{8,10}\b/g, "[phone]")
+    .replace(/\+?\d[\d\s-]{8,14}\d/g, "[phone]")
     .replace(/\S+@\S+\.\S+/g, "[email]");
+
+  if (sanitized !== trimmed) flags.push("pii_redacted");
 
   return {
     passed: !flags.includes("unsafe_or_injection") && !flags.includes("invalid_length"),
@@ -24,9 +32,11 @@ export function runInputGuardrail(userText) {
   };
 }
 
-const isBlocked = text => BLOCKED_PATTERNS.some(rx => rx.test(text));
+export const isBlocked = text =>
+  BLOCKED_PATTERNS.some(rx => rx.test(text || "")) ||
+  PII_SOLICITATION_PATTERNS.some(rx => rx.test(text || ""));
 
-// Parse JSON của Agent. Trả về object có "reply" không rỗng, hoặc null nếu không dùng được.
+// Parse JSON returned by Agent. Returns object with non-empty "reply" or null.
 export function parseAgentJson(rawText) {
   try {
     const cleaned = (rawText || "").replace(/```json|```/g, "").trim();
@@ -38,8 +48,6 @@ export function parseAgentJson(rawText) {
   }
 }
 
-// Gemini (responseSchema) trả vocab dạng [{word, meaningVi}], Cloud Worker trả {word: nghĩa}.
-// Frontend tra nghĩa theo từ viết thường → chuẩn hoá về {word: nghĩa}.
 function normalizeVocab(vocab) {
   const entries = Array.isArray(vocab)
     ? vocab.map(v => [v?.word, v?.meaningVi])
@@ -51,7 +59,6 @@ function normalizeVocab(vocab) {
   );
 }
 
-// Gemini trả các trường phẳng newTopicLabel/Grammar/Example; Cloud Worker có thể trả object newTopic.
 function normalizeNewTopic(parsed) {
   if (parsed.newTopic && parsed.newTopic.label) return parsed.newTopic;
   const label = typeof parsed.newTopicLabel === "string" ? parsed.newTopicLabel.trim() : "";
@@ -67,7 +74,6 @@ export function runOutputGuardrail(rawText, fallback) {
     return { data: fallback, flags, rawValidJson: false, passed: false };
   }
 
-  // Ép chuẩn schema cho trẻ 6+ tuổi
   const reply = parsed.reply.slice(0, 360);
   if (isBlocked(reply)) {
     flags.push("output_safety_blocked");
@@ -90,26 +96,30 @@ export function runOutputGuardrail(rawText, fallback) {
         ? parsed.suggestions.slice(0, 3).map(String)
         : fallback.suggestions,
       newTopic: normalizeNewTopic(parsed),
-      // Ký ức cá nhân cho RAG lần sau; bỏ nếu chứa nội dung không an toàn / prompt injection
       kidFact: kidFact && !isBlocked(kidFact) ? kidFact : ""
     }
   };
 }
 
 export async function logAgentTrace(trace) {
-  await pool.query(
-    `INSERT INTO agent_traces (kid_id, intent, route, rag_doc_ids, model_used, latency_ms, guardrail_passed, guardrail_flags, raw_valid_json)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-    [
-      trace.kidId,
-      trace.intent,
-      trace.route,
-      trace.ragDocIds || [],
-      trace.modelUsed,
-      trace.latencyMs,
-      trace.guardrailPassed,
-      trace.guardrailFlags || [],
-      trace.rawValidJson
-    ]
-  );
+  try {
+    await pool.query(
+      `INSERT INTO agent_traces (kid_id, intent, route, rag_doc_ids, skills_used, model_used, latency_ms, guardrail_passed, guardrail_flags, raw_valid_json)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [
+        trace.kidId,
+        trace.intent,
+        trace.route,
+        trace.ragDocIds || [],
+        trace.skillsUsed || [],
+        trace.modelUsed,
+        trace.latencyMs,
+        trace.guardrailPassed,
+        trace.guardrailFlags || [],
+        trace.rawValidJson
+      ]
+    );
+  } catch {
+    // Non-fatal in offline/no-DB demo mode
+  }
 }

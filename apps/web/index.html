@@ -3,369 +3,883 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>DinoTalk Kids — Học Sâu Tự Nhiên Cùng AI Agent Bobo</title>
+  <title>Chicken Talk — Play Together. Talk Together. Grow Together.</title>
+  <meta name="description" content="Chicken Talk is a safe, joyful AI-guided English playground for children aged 6–10 with Chicky the baby chicken." />
+  <meta name="theme-color" content="#FFD54F" />
+  <link rel="icon" href="./assets/logo.svg" type="image/svg+xml" />
+  <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Quicksand:wght@600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="./src/styles/main.css?v=5" />
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet" />
+  <!-- Backend API base when hosted statically on Netlify -->
+  <meta name="chickentalk-api-base" content="https://dinotalk-api.onrender.com" />
+  <meta name="dinotalk-api-base" content="https://dinotalk-api.onrender.com" />
+  <link rel="stylesheet" href="./src/styles/tokens.css?v=1" />
+  <link rel="stylesheet" href="./src/styles/main.css?v=1" />
 </head>
 <body>
 
+<!-- ==================== 0. ANIMATED SPLASH SCREEN ==================== -->
+<div class="splash-overlay" id="splashOverlay" role="dialog" aria-label="Welcome to Chicken Talk">
+  <div class="splash-card">
+    <div id="splashChickyMount"></div>
+    <div class="splash-brand-row">
+      <img src="./assets/logo.svg" alt="Chicken Talk Logo" class="splash-logo-img" />
+      <h1 class="splash-title">Chicken <span>Talk</span></h1>
+    </div>
+    <p class="splash-tagline" data-i18n="tagline">Play Together. Talk Together. Grow Together.</p>
+    <p class="splash-sub" data-i18n="splash_sub">
+      Chicky is waiting in Chicky's Little World! Ready to play &amp; speak English together?
+    </p>
+    <button type="button" class="btn btn-yellow btn-xl" id="splashEnterBtn" onclick="window.ChickenApp.dismissSplash()">
+      🐣 <span data-i18n="splash_cta">Let's Play!</span>
+    </button>
+    <small style="color:var(--ct-muted); font-weight:700;" data-i18n="splash_safe_note">
+      🛡️ Kid-Safe • No Ads • No Strangers • AI Guide Transparency
+    </small>
+  </div>
+</div>
+
+<!-- ==================== MAIN APP SHELL ==================== -->
 <div class="app">
-  <!-- Header -->
+
+  <!-- TOP HEADER + ALWAYS-VISIBLE SAFETY BAR -->
   <header class="header">
-    <div class="brand">
-      <div class="dino-logo">🦖</div>
+    <div class="brand" onclick="window.ChickenApp.navigate('home')" role="button" tabindex="0" title="Back to Chicken Talk Home">
+      <div class="brand-logo-wrap">
+        <img src="./assets/logo.svg" alt="Chicken Talk Logo" />
+      </div>
       <div class="brand-text">
-        <span>DinoTalk</span>
-        <small class="brand-sub">Natural AI English</small>
+        <div class="brand-name">Chicken <span>Talk</span></div>
+        <div class="brand-tagline" data-i18n="tagline">Play Together. Talk Together. Grow Together.</div>
       </div>
     </div>
+
     <div class="header-right">
-      <button class="profile-pill" id="authProfileBtn" onclick="openAuthModal()">🔐 <span id="authProfileLabel" data-i18n="btn_login_short">Đăng nhập</span></button>
-      <div class="star-badge">⭐ <span id="starCount">0</span></div>
-      <div class="lang-pill">
-        <button class="lang-btn active" id="langBtnVi" onclick="setLang('vi')">🇻🇳 VI</button>
-        <button class="lang-btn" id="langBtnEn" onclick="setLang('en')">🇬🇧 EN</button>
+      <div class="kid-pill" id="headerKidPill">
+        <span id="headerKidAvatar">🐥</span>
+        <span id="headerKidName">Minh</span>
       </div>
-      <button class="circle-btn" id="camCheckBtn" onclick="openCamPermModal(true)">📷</button>
-      <button class="circle-btn" id="soundBtn" onclick="toggleSound()">🔊</button>
+      <div class="star-badge" title="Adventure Stars">⭐ <span id="starCount">0</span></div>
+
+      <div class="lang-pill" role="group" aria-label="UI Helper Language">
+        <button type="button" class="lang-btn active" id="langBtnVi" onclick="window.ChickenApp.setLang('vi')">🇻🇳 VI</button>
+        <button type="button" class="lang-btn" id="langBtnEn" onclick="window.ChickenApp.setLang('en')">🇬🇧 EN</button>
+      </div>
+
+      <!-- Always-visible Kid Safety Controls -->
+      <button type="button" class="safety-icon-btn" id="soundBtn" onclick="window.ChickenApp.toggleSound()" title="Mute / Unmute Audio">🔊</button>
+      <button type="button" class="safety-icon-btn" id="helpBtn" onclick="window.ChickenApp.openHelp()" title="Ask Chicky for Help">💡</button>
+      <button type="button" class="safety-icon-btn parent-pill" id="headerParentBtn" onclick="window.ChickenApp.requestParentSpace()" title="Parent Space (Adult Gate)">
+        🛡️ <span data-i18n="btn_parents_short">Parents</span>
+      </button>
     </div>
   </header>
 
-  <!-- Main Navigation -->
-  <nav class="nav nav-4">
-    <button class="nav-btn active" id="tabChat" onclick="switchTab('chat')" data-i18n="tab_chat">💬 Trò Chuyện</button>
-    <button class="nav-btn" id="tabRace" onclick="switchTab('race')" data-i18n="tab_race">🏆 Thi Đua</button>
-    <button class="nav-btn" id="tabTopics" onclick="switchTab('topics')" data-i18n="tab_topics">✨ Sáng Tạo Chủ Đề</button>
-    <button class="nav-btn" id="tabParent" onclick="switchTab('parent')" data-i18n="tab_parent">📊 Phụ Huynh</button>
+  <!-- KIDS SPACE NAVIGATION (hidden during immersive Mission mode) -->
+  <nav class="nav" id="mainNav" aria-label="Main Navigation">
+    <button type="button" class="nav-btn active" id="navHome" onclick="window.ChickenApp.navigate('home')">
+      🏠 <span data-i18n="nav_home">Home</span>
+    </button>
+    <button type="button" class="nav-btn" id="navWorlds" onclick="window.ChickenApp.navigate('worlds')">
+      🗺️ <span data-i18n="nav_worlds">Little World</span>
+    </button>
+    <button type="button" class="nav-btn" id="navChat" onclick="window.ChickenApp.navigate('chat')">
+      💬 <span data-i18n="nav_chat">Talk with Chicky</span>
+    </button>
+    <button type="button" class="nav-btn" id="navParent" onclick="window.ChickenApp.requestParentSpace()">
+      🛡️ <span data-i18n="nav_parent">Parent Space</span>
+    </button>
   </nav>
 
-  <!-- TAB 1: CHAT, AI AGENT & VIDEO CALL -->
-  <main class="screen" id="screenChat">
-    <div class="mode-strip">
-      <button class="mode-pill active" id="modeAiBtn" onclick="setChatMode('ai')" data-i18n="mode_ai">🦖 Bạn Thân Bobo AI</button>
-      <button class="mode-pill" id="modeOnlineBtn" onclick="setChatMode('online')" data-i18n="mode_online">👫 Giao Lưu Với Bạn</button>
-      <button class="spark-pill" id="sparkScenarioBtn" onclick="sparkRandomScenario()" title="Đổi tình huống nhập vai ngẫu nhiên">🎲 <span data-i18n="btn_spark">Tình huống bất ngờ</span></button>
-      <button class="auto-mic-pill" id="autoMicBtn" onclick="toggleAutoMic()">🎙️ <span data-i18n="auto_mic">Tự nghe: OFF</span></button>
-    </div>
-
-    <div class="topic-strip" id="topicBar"></div>
-
-    <!-- Online Room Panel -->
-    <section class="room-bar hidden" id="onlinePanel">
-      <div class="row space-between">
-        <strong class="room-heading" data-i18n="room_title">🌐 Phòng Bạn Bè (4 Số)</strong>
-        <span id="onlineStatus" class="status-text">⚪ Chưa vào phòng</span>
+  <!-- ==================== SCREEN 1: KIDS HOME ==================== -->
+  <main class="screen" id="screenHome">
+    <section class="home-hero">
+      <div class="home-chicky-stage" onclick="window.ChickenApp.pokeHomeChicky()" title="Tap Chicky!">
+        <div id="homeChickyMount"></div>
+        <span class="home-chicky-mood-hint" id="homeChickyMoodLabel">🐣 Tap Chicky!</span>
       </div>
 
-      <div class="row" id="roomJoinControls">
-        <input type="text" id="myNickInput" value="Minh" class="input-nick" />
-        <button class="btn btn-blue" onclick="createRoom()" data-i18n="btn_create_room">🏠 Tạo Phòng</button>
-        <input type="text" id="joinCodeInput" maxlength="4" inputmode="numeric" placeholder="1234" class="input-code" />
-        <button class="btn btn-green" onclick="joinRoom()" data-i18n="btn_join_room">🚪 Vào</button>
-      </div>
-
-      <div class="row space-between hidden" id="inRoomRow">
-        <div class="row">
-          <span class="bold-label" data-i18n="room_code_label">Mã phòng:</span>
-          <span class="code-box" id="myRoomCode">----</span>
+      <div class="home-hero-copy">
+        <span class="home-speech-badge">🤖 AI English Guide • Chicky</span>
+        <h2 class="home-hero-title" id="homeGreetingTitle">Hi Minh! Ready to explore Chicky's Little World?</h2>
+        <p class="home-hero-sub" id="homeGreetingSub" data-i18n="home_sub">
+          Team up with a buddy, solve fun stories, and speak English naturally — no boring tests!
+        </p>
+        <div class="row" style="margin-top:4px;">
+          <button type="button" class="btn btn-yellow btn-xl" onclick="window.ChickenApp.navigate('worlds')">
+            🗺️ <span data-i18n="home_primary_cta">Explore Chicky's Little World</span>
+          </button>
+          <button type="button" class="btn btn-mint" onclick="window.ChickenApp.openLobbyForMissingPuppy()">
+            🐶 <span data-i18n="home_quick_puppy">Play: Find Milo!</span>
+          </button>
         </div>
-        <button class="btn btn-coral" onclick="leaveRoom()" data-i18n="btn_leave_room">🚪 Rời Phòng</button>
-      </div>
-
-      <div class="row hidden" id="connectedActionsRow">
-        <button class="btn btn-purple" id="videoCallBtn" onclick="startVideoCall()" data-i18n="btn_video_call">📹 Gọi Video</button>
-        <button class="btn btn-yellow" onclick="sendRaceInvite()" data-i18n="btn_invite_race">🏆 Mời Thi Đua!</button>
       </div>
     </section>
 
-    <!-- 1-Screen Split Camera (Bạn | Đối phương) -->
-    <section class="video-stage hidden" id="videoStage">
-      <div class="video-status-bar">
-        <span id="videoStatusText">🟡 Đang kết nối Video...</span>
-      </div>
-      <div class="split-camera-screen">
-        <div class="cam-pane mine">
-          <video id="localVideo" autoplay muted playsinline webkit-playsinline></video>
-          <div class="cam-tag" id="localCamTag" data-i18n="cam_you_label">📹 Bạn (Gửi sang đối phương)</div>
-        </div>
-        <div class="cam-pane theirs">
-          <video id="remoteVideo" autoplay playsinline webkit-playsinline></video>
-          <div class="cam-tag" id="remoteVideoLabel">📹 Đối phương (Hiển thị bên bạn)</div>
-        </div>
-      </div>
-      <div class="row center">
-        <button class="btn btn-yellow hidden" id="unmuteVideoBtn" onclick="unmuteRemoteVideo()">🔊 Bật Tiếng</button>
-        <button class="btn btn-soft" id="toggleMicTrackBtn" onclick="toggleMediaTrack('audio')">🎤 Mic ON</button>
-        <button class="btn btn-soft" id="toggleCamTrackBtn" onclick="toggleMediaTrack('video')">📷 Cam ON</button>
-        <button class="btn btn-soft" id="flipCamBtn" onclick="switchCamera()" data-i18n="btn_flip_cam">🔄 Đổi Cam</button>
-        <button class="btn btn-coral" onclick="endVideoCall(true)" data-i18n="btn_end_call">📵 Tắt Video</button>
-      </div>
+    <section class="home-action-grid">
+      <button type="button" class="home-tile" onclick="window.ChickenApp.openLobbyForMissingPuppy()">
+        <div class="home-tile-icon mint">🌿</div>
+        <h3 data-i18n="tile_world1_title">World 1: The Magic Garden</h3>
+        <p data-i18n="tile_world1_desc">Find Milo, the missing puppy! Share clues with your buddy using fun English phrases.</p>
+        <span class="home-tile-cta" data-i18n="tile_play_now">Play Adventure →</span>
+      </button>
+
+      <button type="button" class="home-tile" onclick="window.ChickenApp.navigate('chat')">
+        <div class="home-tile-icon sky">💬</div>
+        <h3 data-i18n="tile_chat_title">Talk with Chicky AI</h3>
+        <p data-i18n="tile_chat_desc">Chat freely in English about gardens, pets, and stories. Chicky gently helps you along!</p>
+        <span class="home-tile-cta" data-i18n="tile_chat_cta">Say Hello →</span>
+      </button>
+
+      <button type="button" class="home-tile" onclick="window.ChickenApp.requestParentSpace()">
+        <div class="home-tile-icon coral">🛡️</div>
+        <h3 data-i18n="tile_parent_title">Parent Safety &amp; Progress</h3>
+        <p data-i18n="tile_parent_desc">Approve trusted buddies, manage privacy &amp; session limits, and view gentle learning summaries.</p>
+        <span class="home-tile-cta" data-i18n="tile_parent_cta">Open Parent Space →</span>
+      </button>
     </section>
-    
-    <!-- Deep Natural Grammar Discovery Spotlight -->
-    <div class="grammar-bar">
-      <div class="grammar-bar-content">
-        <span class="deep-badge">🧠 Hiểu Sâu</span>
-        <strong class="grammar-title" id="grammarTitle">Giao tiếp tự nhiên</strong>
-        <span class="grammar-sep">•</span>
-        <span id="grammarExample" class="grammar-example"></span>
-      </div>
-      <button class="btn btn-soft btn-mini" onclick="speakGrammar()" title="Nghe phát âm mẫu">🔊 Mẫu</button>
-    </div>
-
-    <!-- Chat Messages -->
-    <div class="chat-box" id="chatBox"></div>
-
-    <!-- Word Tap Dictionary Toast -->
-    <div class="word-toast" id="wordToast">
-      <span id="wordToastText"></span>
-      <button class="btn btn-soft btn-xs" onclick="document.getElementById('wordToast').style.display='none'">✕</button>
-    </div>
-
-    <div class="tip-toast" id="feedbackBanner"></div>
-    <div class="hint-tray hidden" id="dynamicHintsRow"></div>
-
-    <!-- Speak Dock -->
-    <div class="speak-dock">
-      <button class="big-mic-btn" id="micBtn" onclick="toggleMic('chat')">🎤 <span data-i18n="btn_speak_big">BẤM ĐỂ NÓI BẤT CỨ ĐIỀU GÌ BÉ THÍCH</span></button>
-      <div class="row">
-        <button class="btn btn-yellow btn-hint" id="hintToggleBtn" onclick="toggleDynamicHints()">💡 <span data-i18n="btn_hint">Gợi ý ý tưởng</span></button>
-        <input type="text" id="textInput" class="input-chat" onkeydown="if(event.key==='Enter') sendChat()" />
-        <button class="btn btn-blue" onclick="sendChat()" data-i18n="btn_send">Gửi 🚀</button>
-      </div>
-    </div>
   </main>
 
-  <!-- TAB 2: RACE GAME -->
-  <section class="screen hidden" id="screenRace">
-    <div class="race-wrap">
-      <div class="track-board">
-        <div class="track-lane">
-          <div class="lane-name" id="raceMyLabel">🧒 Bạn</div>
-          <div class="lane-rail"><div class="lane-runner" id="raceMyRunner">🏃</div></div>
-          <div class="lane-pts" id="raceMyScore">0</div>
-        </div>
-        <div class="track-lane">
-          <div class="lane-name" id="raceRivalLabel">🦖 Bobo</div>
-          <div class="lane-rail"><div class="lane-runner" id="raceRivalRunner">🦖</div></div>
-          <div class="lane-pts rival" id="raceRivalScore">0</div>
-        </div>
+  <!-- ==================== SCREEN 2: WORLD SELECTION ==================== -->
+  <section class="screen hidden" id="screenWorlds">
+    <div class="section-header">
+      <div>
+        <h2 data-i18n="worlds_heading">🗺️ Chicky's Little World</h2>
+        <p data-i18n="worlds_sub">Choose a magical place to play and speak English together!</p>
       </div>
-      <div class="timer-track"><div class="timer-fill" id="raceTimerBar"></div></div>
-      <div class="race-card" id="raceStage"></div>
+      <button type="button" class="btn btn-soft btn-sm" onclick="window.ChickenApp.navigate('home')">
+        ← <span data-i18n="btn_back_home">Back Home</span>
+      </button>
+    </div>
+
+    <div class="worlds-grid" id="worldsGrid"></div>
+  </section>
+
+  <!-- ==================== SCREEN 2B: MISSION SELECTION (WORLD 1) ==================== -->
+  <section class="screen hidden" id="screenMissions">
+    <div class="section-header">
+      <div>
+        <h2>🌿 <span data-i18n="missions_heading">The Magic Garden — Choose Your Mission</span></h2>
+        <p data-i18n="missions_sub">Pick a cooperative story adventure to play together in English!</p>
+      </div>
+      <button type="button" class="btn btn-soft btn-sm" onclick="window.ChickenApp.navigate('worlds')">
+        ← <span data-i18n="btn_back_worlds">Little World</span>
+      </button>
+    </div>
+
+    <div class="missions-grid">
+      <article class="world-card playable">
+        <div class="world-banner-art" id="mission1BannerMount"></div>
+        <div class="world-body">
+          <div class="row space-between">
+            <span class="world-mission-sub">Mission 1 • 10–15 min</span>
+            <span class="world-status-pill ready">✅ Ready to Play</span>
+          </div>
+          <h3>🐶 The Missing Puppy (Find Milo!)</h3>
+          <p class="world-desc" data-i18n="mission1_desc">
+            Milo chased a yellow butterfly into the Magic Garden! Team up with your buddy using Map Scout &amp; Clue Spotter clues to find Milo!
+          </p>
+          <div class="phrase-chips">
+            <span class="phrase-chip">Where is...?</span>
+            <span class="phrase-chip">I see...</span>
+            <span class="phrase-chip">Go left / right</span>
+            <span class="phrase-chip">Behind the tree</span>
+            <span class="phrase-chip">Let's go!</span>
+          </div>
+          <div style="margin-top:auto; padding-top:12px;">
+            <button type="button" class="btn btn-yellow btn-xl full-width" onclick="window.ChickenApp.openLobbyForMissingPuppy()">
+              🤝 <span data-i18n="mission1_cta">Join Buddy Lobby &amp; Play!</span>
+            </button>
+          </div>
+        </div>
+      </article>
+
+      <article class="world-card planned">
+        <div class="world-banner yellow" style="min-height:132px; align-items:center;">
+          <div class="world-emoji-badge">🦋</div>
+          <span class="world-status-pill soon">✨ Coming Next</span>
+        </div>
+        <div class="world-body">
+          <div class="world-mission-sub">Mission 2 • Planned Story</div>
+          <h3>🌈 The Butterfly Bridge</h3>
+          <p class="world-desc">
+            Help colorful garden butterflies cross the sparkling stream by matching colors and counting stepping stones together!
+          </p>
+          <div class="phrase-chips">
+            <span class="phrase-chip">What color?</span>
+            <span class="phrase-chip">Next to...</span>
+            <span class="phrase-chip">Let's jump!</span>
+          </div>
+          <div style="margin-top:auto; padding-top:12px;">
+            <button type="button" class="btn btn-soft full-width" disabled>🔒 Unlocks in Next Chapter</button>
+          </div>
+        </div>
+      </article>
     </div>
   </section>
 
-  <!-- TAB 3: CUSTOM TOPIC -->
-  <section class="screen hidden" id="screenTopics">
-    <div class="topic-form-wrap">
-      <div class="card-box">
-        <h3 class="card-heading" data-i18n="create_title">✨ Tạo Thế Giới Trò Chuyện Bé Yêu Thích</h3>
-        <div>
-          <label class="field-label" data-i18n="create_name_lbl">1. Bé muốn trò chuyện hoặc đóng vai về chủ đề gì? (VD: Minecraft, Công chúa, Khủng long bạo chúa, Đá bóng...)</label>
-          <input type="text" id="customTopicName" class="full-width" placeholder="⚽ Đá bóng / 🐉 Thế giới Rồng / 🎮 Minecraft..." />
-        </div>
-        <div>
-          <label class="field-label" data-i18n="create_grammar_lbl">2. Hướng tiếp thu ngữ pháp tự nhiên</label>
-          <select id="customGrammar" class="full-width">
-            <option value="free">🌟 Phản xạ Tự Do & Mở Rộng Câu Tự Nhiên (Khuyên dùng)</option>
-            <option value="like">💬 Chia sẻ Cảm xúc & Sở thích (love, like, enjoy, prefer...)</option>
-            <option value="can">🦸 Miêu tả Đặc điểm & Siêu năng lực (has, can, is able to...)</option>
-            <option value="ing">🎬 Tường thuật Hành động đang diễn ra (am / is / are + V-ing)</option>
-            <option value="past">📖 Kể chuyện Kỷ niệm & Quá khứ (went, saw, played, discovered...)</option>
-          </select>
-        </div>
-        <div>
-          <label class="field-label" data-i18n="create_kw_lbl">3. Chi tiết hoặc nhân vật bé muốn đưa vào (không bắt buộc)</label>
-          <input type="text" id="customKeywords" class="full-width" placeholder="VD: siêu tốc độ, kho báu, bạn thân..." />
-        </div>
-        <button class="btn btn-purple" id="createTopicBtn" onclick="createCustomTopic()" data-i18n="btn_create_topic">✨ Khám Phá Ngay Cùng Bobo!</button>
+  <!-- ==================== SCREEN 3: PRIVATE BUDDY LOBBY & MIC CHECK ==================== -->
+  <section class="screen hidden" id="screenLobby">
+    <div class="section-header">
+      <div>
+        <h2>🐶 <span data-i18n="lobby_title">Mission 1: The Missing Puppy</span></h2>
+        <p data-i18n="lobby_sub">Pick an approved buddy, choose your Information Gap role, and test your voice!</p>
       </div>
-
-      <div class="card-box">
-        <div class="row space-between">
-          <strong data-i18n="my_topics_lbl">📚 Chủ Đề Bé Đã Tạo</strong>
-          <button class="btn btn-coral btn-sm hidden" id="deleteAllTopicsBtn" onclick="deleteAllCustomTopics()" data-i18n="btn_delete_all">🗑️ Xóa tất cả</button>
-        </div>
-        <div id="customTopicList" class="custom-list"></div>
-      </div>
+      <button type="button" class="btn btn-soft btn-sm" onclick="window.ChickenApp.navigate('worlds')">
+        ← <span data-i18n="btn_back_worlds">Worlds</span>
+      </button>
     </div>
-  </section>
 
-  <!-- TAB 4: PARENT DASHBOARD & LEARNING BEHAVIOR ANALYTICS -->
-  <section class="screen hidden" id="screenParent">
-    <div class="parent-wrap">
-      <!-- Top Profile & Backend Connection Banner -->
-      <div class="card-box parent-hero">
-        <div class="row space-between">
-          <div class="row">
-            <div class="kid-avatar-badge" id="dashKidAvatar">🦖</div>
-            <div>
-              <h3 class="card-heading" id="dashKidTitle">Hồ sơ Bé: Minh (6-8 tuổi)</h3>
-              <div class="dash-sub" id="dashBackendStatus">🟡 Chế độ Local (Đăng nhập để đồng bộ PostgreSQL + pgvector)</div>
+    <!-- Explicit Demo Mode Transparency Banner -->
+    <div class="demo-transparency-banner">
+      <div>
+        🤖 <strong data-i18n="demo_banner_title">Isolated Demo Mode Active:</strong>
+        <span data-i18n="demo_banner_desc">You are playing with a clearly labeled simulated buddy (Luna) so you can try the full mission locally. No real strangers or live peer connections are active.</span>
+      </div>
+      <span class="demo-tag">DEMO • SIMULATED PEER</span>
+    </div>
+
+    <div class="lobby-grid">
+      <!-- Left: Approved Buddies + Role Choice -->
+      <div class="card" style="display:flex; flex-direction:column; gap:16px;">
+        <div>
+          <h3 style="margin:0 0 8px;">🤝 <span data-i18n="lobby_pick_buddy">1. Choose an Approved Buddy</span></h3>
+          <div class="buddy-list" id="lobbyBuddyList"></div>
+          <small style="color:var(--ct-muted); font-weight:700; display:block; margin-top:8px;" data-i18n="lobby_buddy_note">
+            🛡️ Only buddies approved in Parent Space appear here. Zero stranger discovery.
+          </small>
+        </div>
+
+        <div>
+          <h3 style="margin:0 0 8px;">🧩 <span data-i18n="lobby_pick_role">2. Pick Your Explorer Role (Information Gap)</span></h3>
+          <div class="role-grid">
+            <button type="button" class="role-card selected" id="roleCardScout" onclick="window.ChickenApp.selectLobbyRole('map_scout')">
+              <strong style="font-size:1rem;">🗺️ Map Scout</strong>
+              <small style="color:var(--ct-ink-soft); font-weight:700;" data-i18n="role_scout_desc">You see the garden map &amp; paths. Ask your buddy for clues!</small>
+            </button>
+            <button type="button" class="role-card" id="roleCardSpotter" onclick="window.ChickenApp.selectLobbyRole('clue_spotter')">
+              <strong style="font-size:1rem;">🔎 Clue Spotter</strong>
+              <small style="color:var(--ct-ink-soft); font-weight:700;" data-i18n="role_spotter_desc">You see Milo's paw prints &amp; clues. Guide your buddy where to go!</small>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: Audio/Mic Readiness + Start CTA -->
+      <div class="card" style="display:flex; flex-direction:column; justify-content:space-between; gap:16px;">
+        <div style="display:flex; flex-direction:column; gap:12px;">
+          <h3 style="margin:0;">🎤 <span data-i18n="lobby_mic_title">3. Audio &amp; Microphone Check</span></h3>
+          <div class="mic-check-box">
+            <div class="row space-between">
+              <strong id="lobbyMicStatus" data-i18n="lobby_mic_ready">🎙️ Ready to test Push-to-Talk!</strong>
+              <button type="button" class="btn btn-sky btn-sm" onclick="window.ChickenApp.testLobbyMic()">
+                🔊 <span data-i18n="lobby_mic_test_btn">Test Audio &amp; Mic</span>
+              </button>
+            </div>
+            <div class="mic-meter"><div class="mic-meter-fill" id="lobbyMicMeter"></div></div>
+            <small style="color:var(--ct-mint-ink); font-weight:700;" data-i18n="lobby_mic_reassure">
+              ✨ No microphone? No problem! You can play the entire mission with Picture Cards &amp; Phrase Hints.
+            </small>
+          </div>
+
+          <div class="card" style="background:var(--ct-cream); padding:14px; border-style:dashed;">
+            <strong style="display:block; margin-bottom:6px;">🎯 <span data-i18n="lobby_targets">Phrases We'll Play With:</span></strong>
+            <div class="phrase-chips">
+              <span class="phrase-chip">Where is...?</span>
+              <span class="phrase-chip">I see...</span>
+              <span class="phrase-chip">Go left / right</span>
+              <span class="phrase-chip">Behind the tree</span>
+              <span class="phrase-chip">Let's go!</span>
             </div>
           </div>
+        </div>
+
+        <button type="button" class="btn btn-yellow btn-xl full-width" id="lobbyStartMissionBtn" onclick="window.ChickenApp.launchMissingPuppy()">
+          🚀 <span data-i18n="lobby_start_btn">Start Adventure: Find Milo!</span>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== SCREEN 4: COOPERATIVE MISSION GAMEPLAY ==================== -->
+  <section class="screen mission-screen hidden" id="screenMission">
+    <!-- Mission Top Control Strip (Always-visible Pause, Help, Safe Exit, Safety Flag) -->
+    <div class="mission-topbar">
+      <div class="mission-stepper" id="missionStepper"></div>
+      <div class="row">
+        <span class="kid-pill" id="missionTimerBadge">⏱️ 00:00</span>
+        <button type="button" class="btn btn-soft btn-sm" onclick="window.ChickenMission.requestChickyHint()">💡 <span data-i18n="btn_hint_short">Hint</span></button>
+        <button type="button" class="btn btn-soft btn-sm" onclick="window.ChickenMission.pauseMission()">⏸ <span data-i18n="btn_pause">Pause</span></button>
+        <button type="button" class="btn btn-soft btn-sm" onclick="window.ChickenApp.openSafetyModal()" title="Report Safety Issue">🛡️</button>
+        <button type="button" class="btn btn-danger btn-sm" onclick="window.ChickenMission.safeExitMission('kid_exit')">🚪 <span data-i18n="btn_safe_exit">Exit</span></button>
+      </div>
+    </div>
+
+    <!-- Main 2-Column Tablet-Landscape Playground -->
+    <div class="mission-playground">
+      <!-- Left: 2.5D Magic Garden Interactive Scene + Role Clue -->
+      <div class="garden-stage-card">
+        <div class="garden-stage-head">
+          <h3 style="margin:0; font-size:1.15rem;" id="missionStageTitle">1. The Garden Gate</h3>
           <div class="row">
-            <button class="btn btn-blue btn-sm" onclick="openAuthModal()" id="dashAuthBtn" data-i18n="btn_account">🔐 Tài khoản</button>
-            <button class="btn btn-soft btn-sm" onclick="refreshParentDashboard()" data-i18n="btn_refresh">🔄 Làm mới</button>
-            <button class="btn btn-coral btn-sm hidden" id="dashLogoutBtn" onclick="logoutParent()" data-i18n="btn_logout">🚪 Thoát</button>
+            <button type="button" class="btn btn-soft btn-xs" onclick="window.ChickenMission.switchRoleInMission()" title="Swap Explorer Role (Demo)">🔄 Role</button>
+            <button type="button" class="btn btn-soft btn-xs" id="missionPeekBtn" onclick="window.ChickenMission.togglePeekPartner()">👀 Peek Partner Clue (Demo)</button>
+          </div>
+        </div>
+
+        <div class="garden-svg-wrap" id="missionGardenWrap"></div>
+
+        <!-- Information Gap Role Clue Card -->
+        <div class="your-clue-card" id="missionYourClue"></div>
+      </div>
+
+      <!-- Right: Animated Chicky Guide + Clearly Labeled Simulated Buddy -->
+      <div class="mission-side-col">
+        <div class="chicky-guide-card">
+          <div id="missionChickyMount"></div>
+          <div class="chicky-bubble-copy">
+            <span class="chicky-name-tag">🐥 Chicky • AI Guide</span>
+            <div class="chicky-speech-en" id="missionChickyEn">Hi explorers! Ready to find Milo?</div>
+            <div class="chicky-speech-vi" id="missionChickyVi"></div>
+          </div>
+        </div>
+
+        <div id="missionRecastBanner" class="recast-banner hidden"></div>
+        <div id="missionYouSaid" class="you-said-pill hidden"></div>
+
+        <div class="buddy-panel-card">
+          <div class="row space-between">
+            <div class="row">
+              <div class="buddy-avatar" id="missionBuddyAvatar">🐰</div>
+              <div>
+                <strong id="missionBuddyName" style="display:block; font-size:1rem;">Luna</strong>
+                <span class="demo-tag" id="missionBuddyStatus">🤖 Simulated Buddy • Demo Mode</span>
+              </div>
+            </div>
+            <button type="button" class="btn btn-soft btn-xs" onclick="window.ChickenApp.speakVoice(document.getElementById('missionBuddySpeech').textContent, { pitch: 1.32 })">🔊</button>
+          </div>
+          <div class="buddy-panel-speech" id="missionBuddySpeech">
+            Ooh! I see tiny paw prints going LEFT!
           </div>
         </div>
       </div>
+    </div>
 
-      <!-- 4 KPI Metrics -->
-      <div class="kpi-grid">
-        <div class="kpi-card">
-          <div class="kpi-label" data-i18n="kpi_speak">🎤 Lượt Luyện Nói (7 ngày)</div>
-          <div class="kpi-val blue" id="dashSpeakCount">0</div>
-          <div class="kpi-note" id="dashGrammarAcc">Chưa có dữ liệu câu</div>
+    <!-- Bottom Multi-Modal Communication Dock (Push-to-Talk + Picture Cards + Level 0-3 Hints) -->
+    <div class="mission-comm-dock">
+      <div class="comm-top-row">
+        <button type="button" class="ptt-btn" id="missionPttBtn" onclick="window.ChickenMission.togglePushToTalk()">
+          🎤 <span data-i18n="btn_ptt">TAP TO SPEAK (PUSH-TO-TALK)</span>
+        </button>
+        <div class="pic-cards-row" id="missionPictureCards"></div>
+      </div>
+
+      <div class="adaptive-hint-bar">
+        <div class="row space-between">
+          <strong style="font-size:0.86rem;">🌟 <span data-i18n="hint_scaffold_title">Chicky's Adaptive Support</span></strong>
+          <div class="hint-level-tabs" role="group" aria-label="Adaptive Hint Levels">
+            <button type="button" class="hint-lvl-btn" data-level="0" onclick="window.ChickenMission.setHintLevel(0)">L0 Visual</button>
+            <button type="button" class="hint-lvl-btn active" data-level="1" onclick="window.ChickenMission.setHintLevel(1)">L1 Full</button>
+            <button type="button" class="hint-lvl-btn" data-level="2" onclick="window.ChickenMission.setHintLevel(2)">L2 Partial</button>
+            <button type="button" class="hint-lvl-btn" data-level="3" onclick="window.ChickenMission.setHintLevel(3)">L3 Open</button>
+          </div>
         </div>
-        <div class="kpi-card">
-          <div class="kpi-label" data-i18n="kpi_hint">💡 Tỷ Lệ Bấm Gợi Ý</div>
-          <div class="kpi-val yellow" id="dashHintRate">0%</div>
-          <div class="kpi-note" id="dashHintDetail">0 lần mở gợi ý</div>
+        <div id="missionHintContent"></div>
+
+        <!-- Gentle keyboard input fallback for mic-less devices & testing gentle recasting -->
+        <div class="mission-quick-test-row">
+          <input type="text" id="missionQuickInput" class="full-width" style="padding:8px 12px; font-size:0.88rem;"
+                 placeholder='Try typing e.g. "Go left!" or "Dog tree!" to see Chicky gently recast...'
+                 onkeydown="if(event.key==='Enter') window.ChickenMission.sendTypedDemoPhrase()" />
+          <button type="button" class="btn btn-sky btn-sm" onclick="window.ChickenMission.sendTypedDemoPhrase()">🗣️ Say</button>
         </div>
-        <div class="kpi-card">
-          <div class="kpi-label" data-i18n="kpi_lookup">📖 Tra Từ & Dịch Câu</div>
-          <div class="kpi-val purple" id="dashLookupCount">0</div>
-          <div class="kpi-note" id="dashLookupDetail">0 từ • 0 dịch câu</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-label" data-i18n="kpi_cefr">🧠 Trình Độ & Điều Phối AI</div>
-          <div class="kpi-val green" id="dashCefrBadge">CEFR A0</div>
-          <div class="kpi-note" id="dashAdaptiveNote">Tự động câu ngắn 4-7 từ</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== SCREEN 5: SHARED MISSION COMPLETION & GOODBYE ==================== -->
+  <section class="screen hidden" id="screenComplete">
+    <div class="complete-card">
+      <div id="completeChickyMount"></div>
+      <div style="font-size:2.2rem;">🐶 🎉 🐰</div>
+      <h2 style="margin:0; font-size:2rem;" data-i18n="complete_title">Hooray! You Rescued Milo Together!</h2>
+      <p style="margin:0; font-weight:700; color:var(--ct-ink-soft); max-width:560px;">
+        <span data-i18n="complete_sub">Amazing teamwork together! Milo is wagging his tail so happily!</span>
+        <span style="display:block; margin-top:6px;">🤝 <strong id="completeBuddySummary">🐰 Luna (Simulated Demo Buddy)</strong></span>
+      </p>
+
+      <div class="badge-unlock-pill">
+        <span style="font-size:2rem;">🐶</span>
+        <div style="text-align:left;">
+          <small style="font-weight:800; color:var(--ct-mint-deep); text-transform:uppercase;">Teamwork Badge Unlocked</small>
+          <div style="font-family:var(--font-display); font-size:1.18rem; font-weight:700;">Puppy Rescuers • +5 ⭐</div>
         </div>
       </div>
 
-      <!-- Skill Mastery (Spaced Repetition SRS) -->
-      <div class="card-box">
-        <div class="row space-between">
-          <strong class="card-heading" data-i18n="dash_mastery_title">🎯 Mức Thành Thạo Ngữ Pháp (Spaced Repetition)</strong>
-          <span class="badge-pill" id="dashWeakSummary">Đang phân tích...</span>
+      <div>
+        <strong style="display:block; margin-bottom:8px; color:var(--ct-ink-soft);" data-i18n="complete_phrases_lbl">
+          🗣️ English Phrases You Used Together (tap to hear again):
+        </strong>
+        <div class="complete-phrases-grid" id="completePhrasesList"></div>
+      </div>
+
+      <p style="margin:4px 0 0; font-weight:800; color:var(--ct-yellow-ink);">
+        🐥 Chicky waves goodbye: "Great teamwork today! See you on our next adventure!"
+      </p>
+
+      <div class="row center" style="margin-top:6px;">
+        <button type="button" class="btn btn-yellow btn-xl" onclick="window.ChickenApp.openLobbyForMissingPuppy()">
+          🔄 <span data-i18n="btn_play_again">Play Again</span>
+        </button>
+        <button type="button" class="btn btn-sky" onclick="window.ChickenApp.navigate('worlds')">
+          🗺️ <span data-i18n="btn_back_worlds">Little World</span>
+        </button>
+        <button type="button" class="btn btn-soft" onclick="window.ChickenApp.requestParentSpace()">
+          📊 <span data-i18n="btn_parent_summary">Parent Summary</span>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== SCREEN 6: TALK WITH CHICKY AI ==================== -->
+  <section class="screen hidden" id="screenChat">
+    <div class="chat-layout">
+      <!-- Animated Chicky Companion Sidebar -->
+      <aside class="chat-mascot-col">
+        <div id="chatChickyMount" onclick="window.ChickenApp.startChickyGreeting()" style="cursor:pointer;" title="Tap Chicky for a fresh greeting!"></div>
+        <h3 style="margin:0; font-size:1.18rem;">Chicky 🐥</h3>
+        <span class="demo-tag">AI Playmate • Safe Mode</span>
+        <p style="margin:0; font-size:0.84rem; font-weight:700; color:var(--ct-ink-soft);" data-i18n="chat_chicky_bio">
+          I'm your curious baby chicken AI guide! Speak or tap ideas — mistakes are totally okay!
+        </p>
+        <button type="button" class="btn btn-yellow btn-sm full-width" onclick="window.ChickenApp.sparkStoryIdea()">
+          🎲 <span data-i18n="btn_story_spark">Surprise Story</span>
+        </button>
+        <button type="button" class="btn btn-soft btn-sm full-width" onclick="window.ChickenApp.openCustomStoryModal()">
+          ✨ <span data-i18n="btn_new_story">My Story World</span>
+        </button>
+      </aside>
+
+      <!-- Main Chat Area -->
+      <div class="chat-main-col">
+        <div class="topic-strip" id="topicBar"></div>
+
+        <div class="grammar-bar">
+          <div class="row" style="gap:7px;">
+            <span class="deep-badge">💡 Chicky Tip</span>
+            <strong id="grammarTitle" style="color:var(--ct-sky-ink);">Natural Playful English</strong>
+            <span style="color:var(--ct-border-strong);">•</span>
+            <span id="grammarExample" style="font-weight:700; color:var(--ct-ink-soft);"></span>
+          </div>
+          <button type="button" class="btn btn-soft btn-xs" onclick="window.ChickenApp.speakGrammarExample()">🔊 Hear</button>
         </div>
+
+        <div class="chat-box" id="chatBox"></div>
+
+        <div class="word-toast" id="wordToast">
+          <span id="wordToastText"></span>
+          <button type="button" class="btn btn-soft btn-xs" onclick="document.getElementById('wordToast').style.display='none'">✕</button>
+        </div>
+        <div class="tip-toast" id="feedbackBanner"></div>
+        <div class="hint-tray hidden" id="dynamicHintsRow"></div>
+
+        <div class="speak-dock">
+          <button type="button" class="ptt-btn" id="chatMicBtn" onclick="window.ChickenApp.toggleChatMic()">
+            🎤 <span data-i18n="chat_speak_btn">TAP TO TALK WITH CHICKY</span>
+          </button>
+          <div class="row">
+            <button type="button" class="btn btn-yellow btn-sm" onclick="window.ChickenApp.toggleDynamicHints()">💡 <span data-i18n="btn_ideas">Ideas</span></button>
+            <input type="text" id="textInput" class="full-width" style="flex:1; min-width:150px;"
+                   placeholder="Say anything in English to Chicky..."
+                   onkeydown="if(event.key==='Enter') window.ChickenApp.sendChat()" />
+            <button type="button" class="btn btn-sky btn-sm" onclick="window.ChickenApp.sendChat()">🚀 <span data-i18n="btn_send">Send</span></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== SCREEN 7: PARENT SPACE (ALL 7 PILLARS) ==================== -->
+  <section class="screen hidden" id="screenParent">
+    <!-- 1. Parent Account & Onboarding Banner -->
+    <div class="card parent-hero">
+      <div class="row space-between">
+        <div class="row">
+          <div class="kid-avatar-badge" id="dashKidAvatar">🐥</div>
+          <div>
+            <h2 style="margin:0; font-size:1.3rem;" id="dashKidTitle">Parent Space — Minh (Age 6–10)</h2>
+            <div style="font-size:0.86rem; font-weight:700; color:var(--ct-ink-soft);" id="dashBackendStatus">
+              🟡 Local Safe Mode (Sign in to sync with PostgreSQL Backend)
+            </div>
+          </div>
+        </div>
+        <div class="row">
+          <button type="button" class="btn btn-sky btn-sm" onclick="window.ChickenApp.openAuthModal()">🔐 <span data-i18n="btn_account">Parent Account</span></button>
+          <button type="button" class="btn btn-soft btn-sm" onclick="window.ChickenApp.refreshParentDashboard()">🔄 <span data-i18n="btn_refresh">Refresh</span></button>
+          <button type="button" class="btn btn-danger btn-sm hidden" id="dashLogoutBtn" onclick="window.ChickenApp.logoutParent()">🚪 Logout</button>
+          <button type="button" class="btn btn-yellow btn-sm" onclick="window.ChickenApp.navigate('home')">🐣 Kids Space</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 6. Learning Progress KPI Summary -->
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-label">🐶 Missions Completed</div>
+        <div class="kpi-val mint" id="dashMissionCount">0</div>
+        <div class="kpi-note" id="dashMissionNote">World 1: The Missing Puppy</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">🎤 Speaking Moments</div>
+        <div class="kpi-val sky" id="dashSpeakCount">0</div>
+        <div class="kpi-note" id="dashGrammarAcc">Playful natural practice</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">💡 Adaptive Hint Use</div>
+        <div class="kpi-val yellow" id="dashHintRate">0%</div>
+        <div class="kpi-note" id="dashHintDetail">0 hints opened</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">🌟 English Level</div>
+        <div class="kpi-val coral" id="dashCefrBadge">CEFR A0</div>
+        <div class="kpi-note" id="dashAdaptiveNote">Gentle scaffolding active</div>
+      </div>
+    </div>
+
+    <!-- 2 & 3: Child Profile + Consent & Privacy Controls -->
+    <div class="parent-grid-2">
+      <!-- Child Profile & Avatar -->
+      <div class="card" style="display:flex; flex-direction:column; gap:12px;">
+        <h3 style="margin:0;">🧒 1. Child Profile &amp; Avatar</h3>
+        <div class="auth-field">
+          <label>Nickname (no real full name needed)</label>
+          <input type="text" id="parentKidNickInput" value="Minh" />
+        </div>
+        <div class="row">
+          <div class="auth-field" style="flex:1;">
+            <label>Age Group</label>
+            <select id="parentKidAgeSelect">
+              <option value="6-8">6–8 years old</option>
+              <option value="9-10">9–10 years old</option>
+              <option value="6-10">6–10 years old</option>
+            </select>
+          </div>
+          <div class="auth-field" style="flex:1;">
+            <label>Comfort Level (CEFR)</label>
+            <select id="parentKidCefrSelect">
+              <option value="A0">A0 — Beginner</option>
+              <option value="A1">A1 — Growing Explorer</option>
+              <option value="A2">A2 — Confident Speaker</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <label style="font-size:0.84rem; font-weight:800; color:var(--ct-ink-soft); display:block; margin-bottom:6px;">Choose Explorer Avatar</label>
+          <div class="avatar-picker" id="parentAvatarPicker"></div>
+        </div>
+        <button type="button" class="btn btn-mint btn-sm" onclick="window.ChickenApp.saveChildProfileFromParent()">✅ Save Child Profile</button>
+      </div>
+
+      <!-- Consent & Privacy Preferences -->
+      <div class="card" style="display:flex; flex-direction:column; gap:10px;">
+        <h3 style="margin:0;">🔒 2. Consent &amp; Privacy Preferences</h3>
+        <div class="consent-row">
+          <div>
+            <label for="consentVerifiedAdult">Adult / Guardian Consent</label>
+            <small>I confirm I am a parent/guardian managing this child's play.</small>
+          </div>
+          <input type="checkbox" id="consentVerifiedAdult" onchange="window.ChickenApp.saveParentSettings()" />
+        </div>
+        <div class="consent-row">
+          <div>
+            <label for="consentPushToTalk">Push-to-Talk Microphone</label>
+            <small>Audio is never stored by default; processed ephemerally only on tap.</small>
+          </div>
+          <input type="checkbox" id="consentPushToTalk" onchange="window.ChickenApp.saveParentSettings()" />
+        </div>
+        <div class="consent-row">
+          <div>
+            <label>Raw Audio / Transcript Storage</label>
+            <small>Disabled by default for child privacy &amp; data minimization.</small>
+          </div>
+          <span class="approved-tag">OFF BY DEFAULT</span>
+        </div>
+        <div class="consent-row">
+          <div>
+            <label>AI Transparency Policy</label>
+            <small>Chicky is clearly labeled as an AI guide; demo buddy Luna is labeled simulated.</small>
+          </div>
+          <span class="approved-tag">ACTIVE</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4 & 5: Approved Trusted Buddies + Session Permissions -->
+    <div class="parent-grid-2">
+      <!-- Approved Trusted Buddies -->
+      <div class="card" style="display:flex; flex-direction:column; gap:12px;">
+        <h3 style="margin:0;">🤝 3. Approved Trusted Buddies</h3>
+        <small style="color:var(--ct-ink-soft); font-weight:700;">
+          Your child can ONLY enter private missions with approved buddies listed here.
+        </small>
+        <div id="parentBuddyManagerList" class="buddy-list"></div>
+        <div class="row" style="margin-top:4px;">
+          <input type="text" id="newBuddyNameInput" placeholder="Trusted friend's nickname..." style="flex:1; min-width:140px;" />
+          <select id="newBuddyAvatarSelect" style="width:76px;">
+            <option value="🦊">🦊</option>
+            <option value="🐼">🐼</option>
+            <option value="🐱">🐱</option>
+            <option value="🐸">🐸</option>
+            <option value="🦁">🦁</option>
+          </select>
+          <button type="button" class="btn btn-sky btn-sm" onclick="window.ChickenApp.addApprovedBuddy()">+ Approve</button>
+        </div>
+      </div>
+
+      <!-- Session Permissions & Safety Controls -->
+      <div class="card" style="display:flex; flex-direction:column; gap:12px;">
+        <h3 style="margin:0;">⏱️ 4. Session Permissions &amp; Safety Controls</h3>
+        <div class="row">
+          <div class="auth-field" style="flex:1;">
+            <label>Session Time Limit</label>
+            <select id="parentSessionLimitSelect" onchange="window.ChickenApp.saveParentSettings()">
+              <option value="10">10 minutes</option>
+              <option value="15" selected>15 minutes (Recommended)</option>
+              <option value="20">20 minutes</option>
+            </select>
+          </div>
+          <div class="auth-field" style="flex:1;">
+            <label>Default Hint Scaffolding</label>
+            <select id="parentDefaultHintSelect" onchange="window.ChickenApp.saveParentSettings()">
+              <option value="0">Level 0 — Visual &amp; Audio</option>
+              <option value="1" selected>Level 1 — Full Phrases</option>
+              <option value="2">Level 2 — Partial Hints</option>
+              <option value="3">Level 3 — Minimal Support</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:6px;">
+          <button type="button" class="btn btn-coral btn-sm" onclick="window.ChickenApp.terminateKidSession()">🛑 End Active Kid Session</button>
+          <button type="button" class="btn btn-soft btn-sm" onclick="window.ChickenApp.openSafetyModal()">🛡️ Submit Safety Report</button>
+          <button type="button" class="btn btn-danger btn-sm" onclick="window.ChickenApp.deleteAllLocalChildData()">🗑️ Delete All Local Child Data</button>
+        </div>
+        <small style="color:var(--ct-muted); font-weight:700;">
+          Note: Legal compliance review is required prior to live child multiplayer pilots (see docs/CHILD_SAFETY.md).
+        </small>
+      </div>
+    </div>
+
+    <!-- Learning Summary: Phrases Practiced + Gentle Skill Comfort + Activity Log -->
+    <div class="parent-grid-2">
+      <div class="card" style="display:flex; flex-direction:column; gap:12px;">
+        <div class="row space-between">
+          <h3 style="margin:0;">🌱 Phrases &amp; Natural Comfort</h3>
+          <span class="demo-tag" id="dashWeakSummary">Growing smoothly!</span>
+        </div>
+        <div id="dashPhrasesSummary" class="phrase-chips"></div>
         <div id="dashSkillList" class="skill-list"></div>
       </div>
 
-      <!-- Recent Learning Behavior Events -->
-      <div class="card-box">
+      <div class="card" style="display:flex; flex-direction:column; gap:12px;">
         <div class="row space-between">
-          <strong class="card-heading" data-i18n="dash_events_title">🕒 Nhật Ký Hành Vi Học & Agent Harness Gần Đây</strong>
-          <span style="font-size:0.8rem; color:var(--muted);" id="dashLastSync">Cập nhật tức thì</span>
+          <h3 style="margin:0;">🕒 Recent Adventure &amp; Practice Log</h3>
+          <small style="color:var(--ct-muted); font-weight:700;" id="dashLastSync">Updated just now</small>
         </div>
         <div id="dashEventList" class="event-list"></div>
       </div>
     </div>
   </section>
+
 </div>
 
-<!-- Parent / Kid Auth Modal (Login & Register) -->
-<div class="modal-bg hidden" id="authModal">
-  <div class="modal auth-modal">
-    <div class="modal-emoji">👨‍👩‍👧🦖</div>
-    <h2 class="modal-title purple" id="authModalTitle" data-i18n="auth_modal_title">Tài Khoản Phụ Huynh & Hồ Sơ Bé</h2>
-    <p class="modal-desc" data-i18n="auth_modal_desc">
-      Đăng nhập để lưu tiến độ học vào PostgreSQL, kích hoạt RAG nhớ lỗi ngữ pháp của riêng bé và xem báo cáo Phụ huynh!
+<!-- ==================== OVERLAYS & MODALS ==================== -->
+
+<!-- Mission Intro Story Overlay -->
+<div class="modal-bg hidden" id="missionIntroOverlay">
+  <div class="modal" style="max-width:520px;">
+    <div id="missionIntroChickyMount"></div>
+    <h2 class="modal-title">🌿 Mission 1: The Missing Puppy!</h2>
+    <p class="modal-desc">
+      "Cheep-cheep! Oh no — playful puppy <strong>Milo 🐶</strong> chased a yellow butterfly into the Magic Garden!
+      Team up with <strong id="introBuddyName">🐰 Luna</strong>, share your clues in English, and bring Milo safely back!"
     </p>
+    <div class="phrase-chips" style="justify-content:center;">
+      <span class="phrase-chip">Where is...?</span>
+      <span class="phrase-chip">Go left / right</span>
+      <span class="phrase-chip">I see...</span>
+      <span class="phrase-chip">Behind the tree</span>
+      <span class="phrase-chip">Let's go!</span>
+    </div>
+    <button type="button" class="btn btn-yellow btn-xl" onclick="window.ChickenMission.beginGameplayAfterIntro()">
+      🚀 Let's Find Milo!
+    </button>
+  </div>
+</div>
+
+<!-- Mission Pause Overlay -->
+<div class="modal-bg hidden" id="missionPauseOverlay">
+  <div class="modal">
+    <div id="pauseChickyMount"></div>
+    <h2 class="modal-title">⏸ Time for a Little Break!</h2>
+    <p class="modal-desc">Chicky and Milo will wait right here whenever you're ready to keep playing.</p>
+    <div class="row center">
+      <button type="button" class="btn btn-yellow btn-xl" onclick="window.ChickenMission.resumeMission()">▶ Resume Adventure</button>
+      <button type="button" class="btn btn-soft" onclick="window.ChickenMission.safeExitMission('kid_exit')">🚪 Safe Exit</button>
+    </div>
+  </div>
+</div>
+
+<!-- Parent Gate Modal -->
+<div class="modal-bg hidden" id="parentGateModal">
+  <div class="modal">
+    <div style="font-size:2.4rem;">🛡️</div>
+    <h2 class="modal-title">Parent Space Check</h2>
+    <p class="modal-desc">Grown-ups only! Solve this quick puzzle to enter Parent Space:</p>
+    <div style="font-family:var(--font-display); font-size:1.75rem; font-weight:700; color:var(--ct-sky-ink); background:var(--ct-sky-light); padding:10px 18px; border-radius:18px;" id="parentGateQuestion">
+      7 + 5 = ?
+    </div>
+    <input type="text" id="parentGateAnswer" inputmode="numeric" placeholder="Type the answer..." style="text-align:center;"
+           onkeydown="if(event.key==='Enter') window.ChickenApp.verifyParentGate()" />
+    <div id="parentGateError" style="color:var(--ct-danger); font-weight:800; font-size:0.86rem;"></div>
+    <div class="row center">
+      <button type="button" class="btn btn-sky" onclick="window.ChickenApp.verifyParentGate()">🔓 Enter Parent Space</button>
+      <button type="button" class="btn btn-soft" onclick="window.ChickenApp.closeModal('parentGateModal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Parent Auth Modal (Login / Register) -->
+<div class="modal-bg hidden" id="authModal">
+  <div class="modal">
+    <div style="font-size:2.3rem;">👨‍👩‍👧🐣</div>
+    <h2 class="modal-title">Parent Account &amp; Cloud Sync</h2>
+    <p class="modal-desc">Sign in to sync learning progress with PostgreSQL, or continue seamlessly in local demo mode.</p>
 
     <div class="auth-tabs">
-      <button class="auth-tab active" id="authTabLogin" onclick="switchAuthMode('login')" data-i18n="auth_tab_login">🔑 Đăng Nhập</button>
-      <button class="auth-tab" id="authTabRegister" onclick="switchAuthMode('register')" data-i18n="auth_tab_register">✨ Tạo Tài Khoản Mới</button>
+      <button type="button" class="auth-tab active" id="authTabLogin" onclick="window.ChickenApp.switchAuthMode('login')">🔑 Sign In</button>
+      <button type="button" class="auth-tab" id="authTabRegister" onclick="window.ChickenApp.switchAuthMode('register')">✨ Create Account</button>
     </div>
 
     <div class="auth-form">
       <div class="auth-field">
-        <label>📧 Email của Phụ huynh</label>
-        <input type="email" id="authEmailInput" class="full-width" placeholder="parent@example.com" />
+        <label>📧 Parent Email</label>
+        <input type="email" id="authEmailInput" placeholder="parent@example.com" />
       </div>
       <div class="auth-field">
-        <label>🔒 Mật khẩu</label>
-        <input type="password" id="authPasswordInput" class="full-width" placeholder="••••••••" onkeydown="if(event.key==='Enter') submitAuthForm()" />
+        <label>🔒 Password</label>
+        <input type="password" id="authPasswordInput" placeholder="••••••••" onkeydown="if(event.key==='Enter') window.ChickenApp.submitAuthForm()" />
       </div>
-
-      <div id="authRegisterFields" class="auth-extra-fields hidden">
+      <div id="authRegisterFields" class="hidden" style="display:flex; flex-direction:column; gap:8px;">
         <div class="auth-field">
-          <label>🧒 Tên ở nhà của Bé (Nickname)</label>
-          <input type="text" id="authKidNickInput" class="full-width" value="Minh" placeholder="VD: Minh, Bắp, Sóc..." />
+          <label>🧒 Child Nickname</label>
+          <input type="text" id="authKidNickInput" value="Minh" />
         </div>
         <div class="row">
           <div class="auth-field" style="flex:1;">
-            <label>🎂 Độ tuổi</label>
-            <select id="authAgeBandSelect" class="full-width">
-              <option value="6-8">6 - 8 tuổi</option>
-              <option value="9-11">9 - 11 tuổi</option>
+            <label>🎂 Age</label>
+            <select id="authAgeBandSelect">
+              <option value="6-8">6–8</option>
+              <option value="9-10">9–10</option>
+              <option value="6-10" selected>6–10</option>
             </select>
           </div>
           <div class="auth-field" style="flex:1;">
-            <label>📈 Trình độ CEFR</label>
-            <select id="authCefrSelect" class="full-width">
-              <option value="A0">A0 (Mới bắt đầu)</option>
-              <option value="A1">A1 (Giao tiếp cơ bản)</option>
-              <option value="A2">A2 (Nói câu dài)</option>
+            <label>📈 CEFR</label>
+            <select id="authCefrSelect">
+              <option value="A0">A0</option>
+              <option value="A1">A1</option>
+              <option value="A2">A2</option>
             </select>
           </div>
         </div>
       </div>
-
       <div class="auth-field">
-        <label style="font-size:0.78rem; color:var(--muted);">🌐 Backend API Server URL</label>
-        <input type="text" id="authApiUrlInput" class="full-width input-sm" value="http://localhost:4000" />
+        <label style="font-size:0.78rem; color:var(--ct-muted);">🌐 Backend API URL</label>
+        <input type="text" id="authApiUrlInput" value="http://localhost:4000" />
       </div>
-
-      <div id="authResultMsg" class="cam-test-result"></div>
-
-      <div class="row center" style="margin-top:8px;">
-        <button class="btn btn-purple btn-lg" id="authSubmitBtn" onclick="submitAuthForm()">🚀 Đăng Nhập Ngay</button>
-        <button class="btn btn-soft" onclick="closeAuthModal()" data-i18n="btn_close">Đóng</button>
+      <div id="authResultMsg" style="font-weight:800; font-size:0.86rem;"></div>
+      <div class="row center">
+        <button type="button" class="btn btn-yellow" id="authSubmitBtn" onclick="window.ChickenApp.submitAuthForm()">🚀 Sign In</button>
+        <button type="button" class="btn btn-soft" onclick="window.ChickenApp.closeModal('authModal')">Close</button>
       </div>
     </div>
   </div>
 </div>
 
-<!-- Camera Permission Modal -->
-<div class="modal-bg hidden" id="camPermModal">
+<!-- Safety Report Modal -->
+<div class="modal-bg hidden" id="safetyModal">
   <div class="modal">
-    <div class="modal-emoji">📸🎤</div>
-    <h2 class="modal-title blue" data-i18n="cam_modal_title">Cho Phép Camera & Micro!</h2>
-    <p id="camPermDesc" class="modal-desc" data-i18n="cam_modal_desc">
-      Để bé nói tiếng Anh và gọi Video thấy mặt bạn bè, hãy bấm nút bên dưới rồi chọn "Cho phép (Allow)" nhé!
+    <div style="font-size:2.3rem;">🛡️💛</div>
+    <h2 class="modal-title">Safety &amp; Feedback Report</h2>
+    <p class="modal-desc">Tell us if anything felt confusing, unsafe, or needs parent review. No child personal details required.</p>
+    <div class="auth-form">
+      <div class="auth-field">
+        <label>Category</label>
+        <select id="safetyCategorySelect">
+          <option value="content_concern">AI or Story Content Concern</option>
+          <option value="audio_issue">Audio / Microphone Issue</option>
+          <option value="privacy_question">Privacy / Parent Controls</option>
+          <option value="other">Other Feedback</option>
+        </select>
+      </div>
+      <div class="auth-field">
+        <label>Details</label>
+        <textarea id="safetyDetailsInput" rows="3" placeholder="Share what happened..."></textarea>
+      </div>
+      <div id="safetyResultMsg" style="font-weight:800; font-size:0.86rem;"></div>
+      <div class="row center">
+        <button type="button" class="btn btn-coral" onclick="window.ChickenApp.submitSafetyReport()">📨 Send Safe Report</button>
+        <button type="button" class="btn btn-soft" onclick="window.ChickenApp.closeModal('safetyModal')">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Custom Story World Modal (for Talk with Chicky) -->
+<div class="modal-bg hidden" id="customStoryModal">
+  <div class="modal">
+    <div style="font-size:2.3rem;">✨🐣</div>
+    <h2 class="modal-title">Create a Story World with Chicky</h2>
+    <p class="modal-desc">Pick any kid-friendly world (e.g. Treehouse, Rainbow Farm, Cute Pets) to chat about with Chicky!</p>
+    <div class="auth-form">
+      <div class="auth-field">
+        <label>Story World Name</label>
+        <input type="text" id="customStoryNameInput" placeholder="e.g. Rainbow Treehouse, Puppy Park..." />
+      </div>
+      <div class="auth-field">
+        <label>Fun Detail (optional)</label>
+        <input type="text" id="customStoryDetailInput" placeholder="e.g. yellow balloon, butterfly..." />
+      </div>
+      <div class="row center">
+        <button type="button" class="btn btn-yellow" onclick="window.ChickenApp.createCustomStoryWorld()">✨ Play Story!</button>
+        <button type="button" class="btn btn-soft" onclick="window.ChickenApp.closeModal('customStoryModal')">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Quick Chicky Help Modal -->
+<div class="modal-bg hidden" id="helpModal">
+  <div class="modal">
+    <div id="helpChickyMount"></div>
+    <h2 class="modal-title">💡 Need a Little Help?</h2>
+    <p class="modal-desc">
+      • Tap <strong>🗺️ Little World</strong> to play <em>The Missing Puppy</em> with your buddy.<br/>
+      • Tap <strong>🎤 Push-to-Talk</strong>, <strong>🖼️ Picture Cards</strong>, or <strong>💡 Hint Phrases</strong> — you never need perfect voice recognition!<br/>
+      • Tap <strong>🔊</strong> anytime to mute or unmute audio.
     </p>
-    <div id="camTestResult" class="cam-test-result"></div>
-    <div class="row center">
-      <button class="btn btn-green btn-lg" id="camAllowBtn" onclick="requestCameraPermission()" data-i18n="cam_btn_allow">✅ Bật & Kiểm Tra Camera</button>
-      <button class="btn btn-soft" onclick="dismissCamPermModal()" data-i18n="cam_btn_later">Để Sau</button>
-    </div>
+    <button type="button" class="btn btn-yellow" onclick="window.ChickenApp.closeModal('helpModal')">Got it, Chicky! 🐣</button>
   </div>
 </div>
 
-<!-- Race Invite Modal -->
-<div class="modal-bg hidden" id="inviteModal">
-  <div class="modal">
-    <div class="modal-emoji">🏆⚡</div>
-    <h2 class="modal-title purple" data-i18n="invite_title">Lời Mời Thi Đua!</h2>
-    <p id="inviteText" class="modal-invite-text"></p>
-    <div class="row center">
-      <button class="btn btn-green btn-lg" onclick="acceptRaceInvite()" data-i18n="btn_accept_race">✅ Chơi Luôn!</button>
-      <button class="btn btn-soft" onclick="declineRaceInvite()" data-i18n="btn_decline_race">❌ Để Sau</button>
-    </div>
-  </div>
-</div>
-
-<!-- Incoming Video Call Modal -->
-<div class="modal-bg hidden" id="incomingCallModal">
-  <div class="modal">
-    <div class="modal-emoji">📹📞</div>
-    <h2 class="modal-title blue" data-i18n="incoming_call_title">Cuộc Gọi Video Đến!</h2>
-    <p id="incomingCallText" class="modal-invite-text"></p>
-    <div class="row center">
-      <button class="btn btn-green btn-lg" onclick="acceptIncomingCall()" data-i18n="btn_answer_call">✅ Nghe Máy</button>
-      <button class="btn btn-coral" onclick="rejectIncomingCall()" data-i18n="btn_reject_call">❌ Từ Chối</button>
-    </div>
-  </div>
-</div>
-
-<script src="https://unpkg.com/mqtt@5.15.2/dist/mqtt.min.js"></script>
-<script src="./src/app.js?v=5"></script>
+<!-- Chicken Talk Modular Scripts (Zero-Build, Offline-Ready) -->
+<script src="./src/components/chicky.js?v=2"></script>
+<script src="./src/components/world-art.js?v=2"></script>
+<script src="./src/components/garden-scene.js?v=2"></script>
+<script src="./src/data/mission-data.js?v=2"></script>
+<script src="./src/mission.js?v=2"></script>
+<script src="./src/app.js?v=2"></script>
 </body>
 </html>
