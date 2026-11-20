@@ -14,8 +14,8 @@
   <!-- Backend API base when hosted statically on Netlify -->
   <meta name="chickentalk-api-base" content="https://dinotalk-api.onrender.com" />
   <meta name="dinotalk-api-base" content="https://dinotalk-api.onrender.com" />
-  <link rel="stylesheet" href="./src/styles/tokens.css?v=1" />
-  <link rel="stylesheet" href="./src/styles/main.css?v=1" />
+  <link rel="stylesheet" href="./src/styles/tokens.css?v=4" />
+  <link rel="stylesheet" href="./src/styles/main.css?v=4" />
 </head>
 <body>
 
@@ -56,6 +56,7 @@
     </div>
 
     <div class="header-right">
+      <button type="button" class="kid-pill hidden" id="headerPairLivePill" onclick="window.ChickenApp.navigate('pair')" style="background:var(--ct-mint-light); border-color:var(--ct-mint-deep); color:var(--ct-mint-ink); cursor:pointer;">🟢 Pair</button>
       <div class="kid-pill" id="headerKidPill">
         <span id="headerKidAvatar">🐥</span>
         <span id="headerKidName">Minh</span>
@@ -67,7 +68,8 @@
         <button type="button" class="lang-btn" id="langBtnEn" onclick="window.ChickenApp.setLang('en')">🇬🇧 EN</button>
       </div>
 
-      <!-- Always-visible Kid Safety Controls -->
+      <!-- Always-visible Kid Safety & Media Controls -->
+      <button type="button" class="safety-icon-btn" id="camCheckBtn" onclick="window.ChickenPair.openCamPermModal()" title="Check Camera & Mic">📷</button>
       <button type="button" class="safety-icon-btn" id="soundBtn" onclick="window.ChickenApp.toggleSound()" title="Mute / Unmute Audio">🔊</button>
       <button type="button" class="safety-icon-btn" id="helpBtn" onclick="window.ChickenApp.openHelp()" title="Ask Chicky for Help">💡</button>
       <button type="button" class="safety-icon-btn parent-pill" id="headerParentBtn" onclick="window.ChickenApp.requestParentSpace()" title="Parent Space (Adult Gate)">
@@ -77,20 +79,50 @@
   </header>
 
   <!-- KIDS SPACE NAVIGATION (hidden during immersive Mission mode) -->
-  <nav class="nav" id="mainNav" aria-label="Main Navigation">
+  <nav class="nav nav-5" id="mainNav" aria-label="Main Navigation">
     <button type="button" class="nav-btn active" id="navHome" onclick="window.ChickenApp.navigate('home')">
       🏠 <span data-i18n="nav_home">Home</span>
     </button>
     <button type="button" class="nav-btn" id="navWorlds" onclick="window.ChickenApp.navigate('worlds')">
       🗺️ <span data-i18n="nav_worlds">Little World</span>
     </button>
+    <button type="button" class="nav-btn" id="navPair" onclick="window.ChickenApp.navigate('pair')">
+      👫 <span data-i18n="nav_pair">Pair Room &amp; Call</span>
+    </button>
+    <button type="button" class="nav-btn" id="navRace" onclick="window.ChickenApp.navigate('race')">
+      🏁 <span data-i18n="nav_race">Buddy Race</span>
+    </button>
     <button type="button" class="nav-btn" id="navChat" onclick="window.ChickenApp.navigate('chat')">
       💬 <span data-i18n="nav_chat">Talk with Chicky</span>
     </button>
-    <button type="button" class="nav-btn" id="navParent" onclick="window.ChickenApp.requestParentSpace()">
-      🛡️ <span data-i18n="nav_parent">Parent Space</span>
-    </button>
   </nav>
+
+  <!-- PERSISTENT 1-SCREEN SPLIT CAMERA / VOICE CALL DOCK (Stays live across Pair Room, Mission & Race!) -->
+  <section class="pair-call-dock hidden" id="pairCallDock" aria-label="Pair Video and Voice Call">
+    <div class="pair-call-head">
+      <span id="videoStatusText">🟡 Connecting Pair Call...</span>
+      <div class="row">
+        <button type="button" class="btn btn-soft btn-xs" id="toggleCompactCallBtn" onclick="window.ChickenPair.toggleCallCompact()">⤡ Thu gọn</button>
+        <button type="button" class="btn btn-danger btn-xs" onclick="window.ChickenPair.endCall(true)">📵 End Call</button>
+      </div>
+    </div>
+    <div class="split-camera-screen">
+      <div class="cam-pane mine">
+        <video id="localVideo" autoplay muted playsinline webkit-playsinline></video>
+        <div class="cam-tag" id="localCamTag">📹 Bạn</div>
+      </div>
+      <div class="cam-pane theirs">
+        <video id="remoteVideo" autoplay playsinline webkit-playsinline></video>
+        <div class="cam-tag" id="remoteVideoLabel">📹 Bạn Đồng Hành</div>
+      </div>
+    </div>
+    <div class="row center">
+      <button type="button" class="btn btn-yellow btn-sm hidden" id="unmuteVideoBtn" onclick="window.ChickenPair.unmuteRemoteVideo()">🔊 Bật Tiếng Bạn</button>
+      <button type="button" class="btn btn-soft btn-sm" id="toggleMicTrackBtn" onclick="window.ChickenPair.toggleMediaTrack('audio')">🎤 Mic ON</button>
+      <button type="button" class="btn btn-soft btn-sm" id="toggleCamTrackBtn" onclick="window.ChickenPair.toggleMediaTrack('video')">📷 Cam ON</button>
+      <button type="button" class="btn btn-soft btn-sm" onclick="window.ChickenPair.switchCamera()">🔄 Đổi Cam</button>
+    </div>
+  </section>
 
   <!-- ==================== SCREEN 1: KIDS HOME ==================== -->
   <main class="screen" id="screenHome">
@@ -110,6 +142,9 @@
           <button type="button" class="btn btn-yellow btn-xl" onclick="window.ChickenApp.navigate('worlds')">
             🗺️ <span data-i18n="home_primary_cta">Explore Chicky's Little World</span>
           </button>
+          <button type="button" class="btn btn-sky" onclick="window.ChickenApp.navigate('pair')">
+            👫 <span data-i18n="home_pair_cta">Pair Room &amp; Video Call</span>
+          </button>
           <button type="button" class="btn btn-mint" onclick="window.ChickenApp.openLobbyForMissingPuppy()">
             🐶 <span data-i18n="home_quick_puppy">Play: Find Milo!</span>
           </button>
@@ -118,25 +153,25 @@
     </section>
 
     <section class="home-action-grid">
-      <button type="button" class="home-tile" onclick="window.ChickenApp.openLobbyForMissingPuppy()">
-        <div class="home-tile-icon mint">🌿</div>
-        <h3 data-i18n="tile_world1_title">World 1: The Magic Garden</h3>
-        <p data-i18n="tile_world1_desc">Find Milo, the missing puppy! Share clues with your buddy using fun English phrases.</p>
-        <span class="home-tile-cta" data-i18n="tile_play_now">Play Adventure →</span>
+      <button type="button" class="home-tile" onclick="window.ChickenApp.navigate('pair')">
+        <div class="home-tile-icon sky">👫</div>
+        <h3 data-i18n="tile_pair_title">Pair Room, Video Call &amp; Co-op</h3>
+        <p data-i18n="tile_pair_desc">Create a 4-digit room with a friend, split-screen Video/Voice Call, rescue Milo as a pair, or race together!</p>
+        <span class="home-tile-cta" data-i18n="tile_pair_cta">Open Pair Room →</span>
+      </button>
+
+      <button type="button" class="home-tile" onclick="window.ChickenApp.navigate('race')">
+        <div class="home-tile-icon coral">🏁</div>
+        <h3 data-i18n="tile_race_title">Chicky Buddy Race</h3>
+        <p data-i18n="tile_race_desc">Play a joyful English speaking &amp; reflex sprint solo with Chicky or invite your paired buddy!</p>
+        <span class="home-tile-cta" data-i18n="tile_race_cta">Start Sprint →</span>
       </button>
 
       <button type="button" class="home-tile" onclick="window.ChickenApp.navigate('chat')">
-        <div class="home-tile-icon sky">💬</div>
+        <div class="home-tile-icon mint">💬</div>
         <h3 data-i18n="tile_chat_title">Talk with Chicky AI</h3>
         <p data-i18n="tile_chat_desc">Chat freely in English about gardens, pets, and stories. Chicky gently helps you along!</p>
         <span class="home-tile-cta" data-i18n="tile_chat_cta">Say Hello →</span>
-      </button>
-
-      <button type="button" class="home-tile" onclick="window.ChickenApp.requestParentSpace()">
-        <div class="home-tile-icon coral">🛡️</div>
-        <h3 data-i18n="tile_parent_title">Parent Safety &amp; Progress</h3>
-        <p data-i18n="tile_parent_desc">Approve trusted buddies, manage privacy &amp; session limits, and view gentle learning summaries.</p>
-        <span class="home-tile-cta" data-i18n="tile_parent_cta">Open Parent Space →</span>
       </button>
     </section>
   </main>
@@ -231,13 +266,19 @@
       </button>
     </div>
 
+    <!-- Live Paired Buddy Banner (shown when connected in a 4-Digit Pair Room) -->
+    <div class="demo-transparency-banner hidden" id="lobbyLivePairBanner" style="background:linear-gradient(135deg, #EAF9F2 0%, #FFF3C4 100%); border-color:var(--ct-mint-deep);">
+      <div id="lobbyLivePairText" style="color:var(--ct-mint-ink);">🟢 Paired live with your friend!</div>
+      <button type="button" class="btn btn-mint btn-sm" onclick="window.ChickenPair.invitePairMission()">🐶 Play Live Together!</button>
+    </div>
+
     <!-- Explicit Demo Mode Transparency Banner -->
     <div class="demo-transparency-banner">
       <div>
         🤖 <strong data-i18n="demo_banner_title">Isolated Demo Mode Active:</strong>
-        <span data-i18n="demo_banner_desc">You are playing with a clearly labeled simulated buddy (Luna) so you can try the full mission locally. No real strangers or live peer connections are active.</span>
+        <span data-i18n="demo_banner_desc">Play with simulated buddy Luna locally, OR open a 4-digit Pair Room to play live with a real friend!</span>
       </div>
-      <span class="demo-tag">DEMO • SIMULATED PEER</span>
+      <button type="button" class="btn btn-sky btn-sm" onclick="window.ChickenApp.navigate('pair')">👫 Pair 4-Digit Room</button>
     </div>
 
     <div class="lobby-grid">
@@ -309,6 +350,7 @@
       <div class="mission-stepper" id="missionStepper"></div>
       <div class="row">
         <span class="kid-pill" id="missionTimerBadge">⏱️ 00:00</span>
+        <button type="button" class="btn btn-sky btn-sm hidden" id="missionPairCallBtn" onclick="window.ChickenPair.startCall('video')">📹 Call Buddy</button>
         <button type="button" class="btn btn-soft btn-sm" onclick="window.ChickenMission.requestChickyHint()">💡 <span data-i18n="btn_hint_short">Hint</span></button>
         <button type="button" class="btn btn-soft btn-sm" onclick="window.ChickenMission.pauseMission()">⏸ <span data-i18n="btn_pause">Pause</span></button>
         <button type="button" class="btn btn-soft btn-sm" onclick="window.ChickenApp.openSafetyModal()" title="Report Safety Issue">🛡️</button>
@@ -390,8 +432,8 @@
         <!-- Gentle keyboard input fallback for mic-less devices & testing gentle recasting -->
         <div class="mission-quick-test-row">
           <input type="text" id="missionQuickInput" class="full-width" style="padding:8px 12px; font-size:0.88rem;"
-                 placeholder='Try typing e.g. "Go left!" or "Dog tree!" to see Chicky gently recast...'
-                 onkeydown="if(event.key==='Enter') window.ChickenMission.sendTypedDemoPhrase()" />
+                 autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+                 placeholder='Try typing e.g. "Go left!" or "Dog tree!" to see Chicky gently recast...' />
           <button type="button" class="btn btn-sky btn-sm" onclick="window.ChickenMission.sendTypedDemoPhrase()">🗣️ Say</button>
         </div>
       </div>
@@ -491,13 +533,134 @@
           <div class="row">
             <button type="button" class="btn btn-yellow btn-sm" onclick="window.ChickenApp.toggleDynamicHints()">💡 <span data-i18n="btn_ideas">Ideas</span></button>
             <input type="text" id="textInput" class="full-width" style="flex:1; min-width:150px;"
-                   placeholder="Say anything in English to Chicky..."
-                   onkeydown="if(event.key==='Enter') window.ChickenApp.sendChat()" />
+                   autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+                   placeholder="Say anything in English to Chicky..." />
             <button type="button" class="btn btn-sky btn-sm" onclick="window.ChickenApp.sendChat()">🚀 <span data-i18n="btn_send">Send</span></button>
           </div>
         </div>
       </div>
     </div>
+  </section>
+
+  <!-- ==================== SCREEN 6B: PAIR ROOM, SPLIT CALL & CO-OP HUB ==================== -->
+  <section class="screen hidden" id="screenPair">
+    <div class="section-header">
+      <div>
+        <h2>👫 <span data-i18n="pair_heading">Phòng Tương Tác Theo Cặp (Mã 4 Số &amp; Call)</span></h2>
+        <p data-i18n="pair_sub">Tạo hoặc nhập mã phòng 4 số để gọi Video/Thoại 2 chiều, cùng giải cứu Cún Milo 2 người hoặc Đua Vui tiếng Anh!</p>
+      </div>
+      <span class="pair-status-badge tone-idle" id="pairStatusText">⚪ Chưa vào phòng cặp</span>
+    </div>
+
+    <!-- Room Connection Bar -->
+    <div class="card pair-room-card">
+      <div class="row space-between" id="pairJoinRow">
+        <div class="row">
+          <input type="text" id="pairNickInput" value="Minh" style="width:130px;" placeholder="Tên bé" />
+          <button type="button" class="btn btn-yellow" onclick="window.ChickenPair.createRoom()">🏠 <span data-i18n="btn_create_room">Tạo Phòng 4 Số</span></button>
+        </div>
+        <div class="row">
+          <input type="text" id="pairJoinCodeInput" maxlength="4" inputmode="numeric" placeholder="1234" style="width:105px; text-align:center; letter-spacing:4px; font-size:1.1rem;"
+                 onkeydown="if(event.key==='Enter') window.ChickenPair.joinRoom()" />
+          <button type="button" class="btn btn-mint" onclick="window.ChickenPair.joinRoom()">🚪 <span data-i18n="btn_join_room">Vào Phòng</span></button>
+        </div>
+      </div>
+
+      <div class="row space-between hidden" id="pairInRoomRow">
+        <div class="row">
+          <strong style="color:var(--ct-sky-ink);">🔑 Mã Phòng Cặp:</strong>
+          <span class="pair-code-box" id="pairRoomCodeDisplay">----</span>
+          <button type="button" class="btn btn-soft btn-sm" onclick="window.ChickenPair.copyRoomCode()">📋 Copy</button>
+        </div>
+        <button type="button" class="btn btn-danger btn-sm" onclick="window.ChickenPair.leaveRoom()">🚪 Rời Phòng</button>
+      </div>
+
+      <!-- Pair Live Actions (Visible when Friend Connected) -->
+      <div class="pair-actions-grid hidden" id="pairConnectedActions">
+        <button type="button" class="pair-action-tile sky" onclick="window.ChickenPair.startCall('video')">
+          <span class="pair-act-icon">📹</span>
+          <strong>Gọi Video 2 Chiều</strong>
+          <small>Chia đôi màn hình thấy mặt bạn</small>
+        </button>
+        <button type="button" class="pair-action-tile mint" onclick="window.ChickenPair.startCall('audio')">
+          <span class="pair-act-icon">📞</span>
+          <strong>Gọi Thoại (Chỉ Mic)</strong>
+          <small>Nói chuyện nhẹ nhàng không bật cam</small>
+        </button>
+        <button type="button" class="pair-action-tile yellow" onclick="window.ChickenPair.invitePairMission()">
+          <span class="pair-act-icon">🐶</span>
+          <strong>Cùng Tìm Cún Milo</strong>
+          <small>Chơi ghép đôi 2 vai Map &amp; Clue</small>
+        </button>
+        <button type="button" class="pair-action-tile coral" onclick="window.ChickenPair.sendRaceInvite()">
+          <span class="pair-act-icon">🏁</span>
+          <strong>Mời Đua Vui Theo Cặp</strong>
+          <small>Đua phản xạ tiếng Anh trực tiếp</small>
+        </button>
+      </div>
+    </div>
+
+    <!-- Live Pair Chat + Quick English Phrases + Cheer Reactions -->
+    <div class="card" style="display:flex; flex-direction:column; gap:12px;">
+      <div class="row space-between">
+        <h3 style="margin:0;">💬 Trò Chuyện &amp; Cổ Vũ Theo Cặp</h3>
+        <div class="row" style="gap:6px;">
+          <button type="button" class="btn btn-soft btn-xs" onclick="window.ChickenPair.sendPairReaction('👏')">👏</button>
+          <button type="button" class="btn btn-soft btn-xs" onclick="window.ChickenPair.sendPairReaction('🎉')">🎉</button>
+          <button type="button" class="btn btn-soft btn-xs" onclick="window.ChickenPair.sendPairReaction('⭐')">⭐</button>
+          <button type="button" class="btn btn-soft btn-xs" onclick="window.ChickenPair.sendPairReaction('🐶')">🐶</button>
+        </div>
+      </div>
+
+      <div id="pairReactionToast" class="recast-banner hidden" style="text-align:center;"></div>
+
+      <div class="chat-box" id="pairChatBox" style="min-height:170px; max-height:240px; background:var(--ct-cream-soft); border-radius:18px; border:1.5px solid var(--ct-border);">
+        <div class="pair-empty-note" style="color:var(--ct-muted); font-weight:700; text-align:center; padding:24px 10px;">
+          🐣 Tạo phòng 4 số và đọc mã cho bạn (hoặc mở thêm 1 tab trình duyệt) để gọi Video/Thoại và chơi tương tác theo cặp ngay!
+        </div>
+      </div>
+
+      <div class="phrase-chips">
+        <button type="button" class="mission-phrase-chip" onclick="window.ChickenPair.sendPairChat('Hello my friend! Let us play!')">👋 Hello my friend!</button>
+        <button type="button" class="mission-phrase-chip" onclick="window.ChickenPair.sendPairChat('Where is Milo? Let us go!')">🐶 Where is Milo?</button>
+        <button type="button" class="mission-phrase-chip" onclick="window.ChickenPair.sendPairChat('Ready for a fun race?')">🏁 Ready to race?</button>
+        <button type="button" class="mission-phrase-chip" onclick="window.ChickenPair.sendPairChat('Great teamwork! High five!')">🙌 Great teamwork!</button>
+      </div>
+
+      <div class="row">
+        <input type="text" id="pairChatInput" class="full-width" style="flex:1; min-width:160px;"
+               autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+               placeholder="Nhắn câu tiếng Anh gửi sang máy bạn..." />
+        <button type="button" class="btn btn-sky" onclick="window.ChickenPair.sendPairChat()">🚀 Gửi Bạn</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== SCREEN 6C: CHICKY BUDDY RACE (SOLO OR LIVE PAIR) ==================== -->
+  <section class="screen hidden" id="screenRace">
+    <div class="section-header">
+      <div>
+        <h2>🏁 <span data-i18n="race_heading">Đường Đua Vui Tiếng Anh Theo Cặp</span></h2>
+        <p data-i18n="race_sub">Thi phản xạ nghe, chọn và nói tiếng Anh tự nhiên cùng Chicky hoặc bạn trong Phòng 4 Số!</p>
+      </div>
+      <button type="button" class="btn btn-sky btn-sm" onclick="window.ChickenApp.navigate('pair')">👫 Phòng Cặp 4 Số</button>
+    </div>
+
+    <div class="track-board">
+      <div class="track-lane">
+        <div class="lane-name" id="raceMyLabel">🐥 Minh</div>
+        <div class="lane-rail"><div class="lane-runner" id="raceMyRunner">🐥</div></div>
+        <div class="lane-pts" id="raceMyScore">0</div>
+      </div>
+      <div class="track-lane">
+        <div class="lane-name" id="raceRivalLabel">🐥 Chicky</div>
+        <div class="lane-rail"><div class="lane-runner" id="raceRivalRunner">🐥</div></div>
+        <div class="lane-pts rival" id="raceRivalScore">0</div>
+      </div>
+    </div>
+
+    <div class="timer-track"><div class="timer-fill" id="raceTimerBar"></div></div>
+    <div class="card race-card" id="raceStage"></div>
   </section>
 
   <!-- ==================== SCREEN 7: PARENT SPACE (ALL 7 PILLARS) ==================== -->
@@ -597,6 +760,13 @@
             <small>Audio is never stored by default; processed ephemerally only on tap.</small>
           </div>
           <input type="checkbox" id="consentPushToTalk" onchange="window.ChickenApp.saveParentSettings()" />
+        </div>
+        <div class="consent-row">
+          <div>
+            <label for="consentPairVideoCall">Pair Room Split-Screen Video Call</label>
+            <small>Allow 2-way WebRTC video between paired friends (off = audio-only calls).</small>
+          </div>
+          <input type="checkbox" id="consentPairVideoCall" checked onchange="window.ChickenApp.saveParentSettings()" />
         </div>
         <div class="consent-row">
           <div>
@@ -874,12 +1044,69 @@
   </div>
 </div>
 
-<!-- Chicken Talk Modular Scripts (Zero-Build, Offline-Ready) -->
-<script src="./src/components/chicky.js?v=2"></script>
-<script src="./src/components/world-art.js?v=2"></script>
-<script src="./src/components/garden-scene.js?v=2"></script>
-<script src="./src/data/mission-data.js?v=2"></script>
-<script src="./src/mission.js?v=2"></script>
-<script src="./src/app.js?v=2"></script>
+<!-- Camera & Mic Permission Modal -->
+<div class="modal-bg hidden" id="camPermModal">
+  <div class="modal">
+    <div style="font-size:2.4rem;">📸🎤</div>
+    <h2 class="modal-title">Cho Phép Camera &amp; Micro!</h2>
+    <p class="modal-desc">
+      Để bé nói tiếng Anh và gọi Video/Thoại thấy mặt bạn trong Phòng Cặp, hãy bấm nút bên dưới rồi chọn "Cho phép (Allow)" nhé!
+    </p>
+    <div id="camTestResult" style="font-weight:800; font-size:0.88rem;"></div>
+    <div class="row center">
+      <button type="button" class="btn btn-mint" id="camAllowBtn" onclick="window.ChickenPair.requestCameraPermission()">✅ Bật &amp; Kiểm Tra</button>
+      <button type="button" class="btn btn-soft" onclick="window.ChickenApp.closeModal('camPermModal')">Để Sau</button>
+    </div>
+  </div>
+</div>
+
+<!-- Incoming Pair Video/Voice Call Modal -->
+<div class="modal-bg hidden" id="incomingCallModal">
+  <div class="modal">
+    <div style="font-size:2.6rem;">📹📞</div>
+    <h2 class="modal-title">Cuộc Gọi Theo Cặp Đến!</h2>
+    <p class="modal-desc" id="incomingCallText">Bạn đang gọi cho bé!</p>
+    <div class="row center">
+      <button type="button" class="btn btn-mint btn-xl" onclick="window.ChickenPair.acceptIncomingCall()">✅ Nghe Máy</button>
+      <button type="button" class="btn btn-coral" onclick="window.ChickenPair.rejectIncomingCall()">❌ Từ Chối</button>
+    </div>
+  </div>
+</div>
+
+<!-- Pair Co-op Mission Invite Modal -->
+<div class="modal-bg hidden" id="pairMissionInviteModal">
+  <div class="modal">
+    <div style="font-size:2.6rem;">🐶🗺️</div>
+    <h2 class="modal-title">Lời Mời Cùng Tìm Cún Milo!</h2>
+    <p class="modal-desc" id="pairMissionInviteText">Bạn mời bé ghép cặp 2 người đi tìm Milo!</p>
+    <div class="row center">
+      <button type="button" class="btn btn-yellow btn-xl" onclick="window.ChickenPair.acceptMissionInvite()">🐶 Chơi Cùng Bạn!</button>
+      <button type="button" class="btn btn-soft" onclick="window.ChickenPair.declineMissionInvite()">❌ Để Sau</button>
+    </div>
+  </div>
+</div>
+
+<!-- Buddy Race Invite Modal -->
+<div class="modal-bg hidden" id="raceInviteModal">
+  <div class="modal">
+    <div style="font-size:2.6rem;">🏁⚡</div>
+    <h2 class="modal-title">Lời Mời Đua Tiếng Anh Theo Cặp!</h2>
+    <p class="modal-desc" id="raceInviteText">Bạn mời bé đua phản xạ tiếng Anh!</p>
+    <div class="row center">
+      <button type="button" class="btn btn-yellow btn-xl" onclick="window.ChickenPair.acceptRaceInvite()">✅ Đua Luôn!</button>
+      <button type="button" class="btn btn-soft" onclick="window.ChickenPair.declineRaceInvite()">❌ Để Sau</button>
+    </div>
+  </div>
+</div>
+
+<!-- Chicken Talk Modular Scripts (Zero-Build, Offline-Ready + MQTT Pair Sync) -->
+<script src="https://unpkg.com/mqtt@5.15.2/dist/mqtt.min.js"></script>
+<script src="./src/components/chicky.js?v=4"></script>
+<script src="./src/components/world-art.js?v=4"></script>
+<script src="./src/components/garden-scene.js?v=4"></script>
+<script src="./src/data/mission-data.js?v=4"></script>
+<script src="./src/pair.js?v=4"></script>
+<script src="./src/mission.js?v=4"></script>
+<script src="./src/app.js?v=4"></script>
 </body>
 </html>

@@ -59,11 +59,26 @@
       btn_parents_short: "Phụ Huynh",
       nav_home: "Trang Chủ",
       nav_worlds: "Thế Giới Nhỏ",
-      nav_chat: "Nói Với Chicky",
+      nav_pair: "Phòng Cặp & Call",
+      nav_race: "Đua Vui",
+      nav_chat: "Chicky AI",
       nav_parent: "Phụ Huynh",
-      home_sub: "Cùng bạn thân giải mã câu chuyện, khám phá khu vườn và nói tiếng Anh thật tự nhiên — không bài kiểm tra áp lực!",
+      home_sub: "Cùng bạn thân gọi Video/Thoại, giải cứu cún Milo, đua vui tiếng Anh và trò chuyện cùng Chicky!",
       home_primary_cta: "Khám Phá Thế Giới Của Chicky",
+      home_pair_cta: "Phòng Cặp 4 Số & Call",
       home_quick_puppy: "Chơi Ngay: Tìm Cún Milo!",
+      tile_pair_title: "Phòng Cặp 4 Số, Call & Hợp Tác",
+      tile_pair_desc: "Tạo phòng 4 số với bạn, gọi Video/Thoại chia đôi màn hình, cùng tìm cún Milo 2 người hoặc mời đua vui!",
+      tile_pair_cta: "Mở Phòng Cặp →",
+      tile_race_title: "Đường Đua Vui Theo Cặp",
+      tile_race_desc: "Thi phản xạ nghe & nói tiếng Anh thật vui cùng Chicky hoặc rủ bạn trong phòng cặp đua trực tiếp!",
+      tile_race_cta: "Vào Đường Đua →",
+      pair_heading: "Phòng Tương Tác Theo Cặp (Mã 4 Số & Call)",
+      pair_sub: "Tạo hoặc nhập mã phòng 4 số để gọi Video/Thoại 2 chiều, cùng giải cứu Cún Milo 2 người hoặc Đua Vui tiếng Anh!",
+      btn_create_room: "Tạo Phòng 4 Số",
+      btn_join_room: "Vào Phòng",
+      race_heading: "Đường Đua Vui Tiếng Anh Theo Cặp",
+      race_sub: "Thi phản xạ nghe, chọn và nói tiếng Anh tự nhiên cùng Chicky hoặc bạn trong Phòng 4 Số!",
       tile_world1_title: "Thế Giới 1: Khu Vườn Phép Thuật",
       tile_world1_desc: "Tìm chú cún Milo đi lạc! Chia sẻ manh mối bằng tiếng Anh cùng bạn nhé.",
       tile_play_now: "Chơi Nhiệm Vụ →",
@@ -123,11 +138,26 @@
       btn_parents_short: "Parents",
       nav_home: "Home",
       nav_worlds: "Little World",
-      nav_chat: "Talk with Chicky",
+      nav_pair: "Pair Room & Call",
+      nav_race: "Buddy Race",
+      nav_chat: "Chicky AI",
       nav_parent: "Parent Space",
-      home_sub: "Team up with a buddy, solve fun stories, and speak English naturally — no boring tests!",
+      home_sub: "Pair up with a buddy for Video/Voice Calls, rescue Milo together, sprint in Buddy Race, or chat with Chicky!",
       home_primary_cta: "Explore Chicky's Little World",
+      home_pair_cta: "4-Digit Pair Room & Call",
       home_quick_puppy: "Play: Find Milo!",
+      tile_pair_title: "Pair Room, Video Call & Co-op",
+      tile_pair_desc: "Create a 4-digit room with a friend, split-screen Video/Voice Call, rescue Milo as a pair, or race together!",
+      tile_pair_cta: "Open Pair Room →",
+      tile_race_title: "Chicky Buddy Race",
+      tile_race_desc: "Play a joyful English speaking & reflex sprint solo with Chicky or invite your paired buddy!",
+      tile_race_cta: "Start Sprint →",
+      pair_heading: "Pair Interaction Room (4-Digit Code & Call)",
+      pair_sub: "Create or join a 4-digit room for 2-way Video/Voice Calls, Live Pair Milo Rescue, or Buddy Race!",
+      btn_create_room: "Create 4-Digit Room",
+      btn_join_room: "Join Room",
+      race_heading: "Chicky Buddy English Sprint",
+      race_sub: "Race playfully in English with Chicky or invite your buddy connected in a 4-Digit Pair Room!",
       tile_world1_title: "World 1: The Magic Garden",
       tile_world1_desc: "Find Milo, the missing puppy! Share clues with your buddy using fun English phrases.",
       tile_play_now: "Play Adventure →",
@@ -272,6 +302,7 @@
       parentConsent: {
         verifiedAdult: true,
         allowPushToTalk: true,
+        allowPairVideoCall: true,
         storeRawAudio: false,
         sessionLimitMin: 15,
         defaultHintLevel: 1
@@ -425,7 +456,7 @@
   }
 
   // ================= NAVIGATION & SCREENS =================
-  const ALL_SCREENS = ["home", "worlds", "missions", "lobby", "mission", "complete", "chat", "parent"];
+  const ALL_SCREENS = ["home", "worlds", "missions", "lobby", "mission", "complete", "chat", "pair", "race", "parent"];
 
   function showScreen(name) {
     currentScreen = name;
@@ -440,14 +471,28 @@
     if (nav) nav.classList.toggle("hidden", name === "mission");
 
     // Highlight active nav tab
-    const navMap = { home: "navHome", worlds: "navWorlds", missions: "navWorlds", lobby: "navWorlds", complete: "navWorlds", chat: "navChat", parent: "navParent" };
-    ["navHome", "navWorlds", "navChat", "navParent"].forEach(id => {
+    const navMap = {
+      home: "navHome",
+      worlds: "navWorlds",
+      missions: "navWorlds",
+      lobby: "navWorlds",
+      complete: "navWorlds",
+      pair: "navPair",
+      race: "navRace",
+      chat: "navChat"
+    };
+    ["navHome", "navWorlds", "navPair", "navRace", "navChat"].forEach(id => {
       document.getElementById(id)?.classList.toggle("active", navMap[name] === id);
     });
 
     if (name === "worlds") renderWorldsGrid();
     if (name === "missions") renderMission1Art();
-    if (name === "lobby") renderLobby();
+    if (name === "lobby") {
+      renderLobby();
+      window.ChickenPair?.updatePairControlsUI?.();
+    }
+    if (name === "pair") window.ChickenPair?.updatePairControlsUI?.();
+    if (name === "race") window.ChickenPair?.renderRaceWelcome?.();
     if (name === "parent") refreshParentDashboard();
   }
 
@@ -824,17 +869,24 @@
     bubble.appendChild(sEl);
 
     const tc = document.createElement("div");
-    text.split(/([A-Za-z']+)/).forEach(part => {
-      if (/^[A-Za-z']+$/.test(part) && part.length >= 2) {
-        const sp = document.createElement("span");
-        sp.className = "word-tok";
-        sp.textContent = part;
-        sp.onclick = e => { e.stopPropagation(); showWordLookup(part, meta.vocab || {}); };
-        tc.appendChild(sp);
-      } else {
-        tc.appendChild(document.createTextNode(part));
-      }
-    });
+    // Unicode-aware whole-word split so Vietnamese words with diacritics ("chào", "tiếng", "Việt")
+    // are NEVER chopped into ASCII fragments around accented vowels!
+    const hasViDiacritics = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(text);
+    if (hasViDiacritics && cls === "me") {
+      tc.textContent = text;
+    } else {
+      text.split(/([\p{L}']+)/u).forEach(part => {
+        if (/^[A-Za-z']{2,}$/.test(part)) {
+          const sp = document.createElement("span");
+          sp.className = "word-tok";
+          sp.textContent = part;
+          sp.onclick = e => { e.stopPropagation(); showWordLookup(part, meta.vocab || {}); };
+          tc.appendChild(sp);
+        } else {
+          tc.appendChild(document.createTextNode(part));
+        }
+      });
+    }
     bubble.appendChild(tc);
 
     const transBox = document.createElement("div");
@@ -992,12 +1044,71 @@
     });
   }
 
+  // Vietnamese IME-safe input clear & Enter handler (prevents trailing char jumping on macOS Telex/VNI/Safari/EVKey)
+  function resetChatInputSafely(inp) {
+    if (!inp) return;
+    const wasFocused = document.activeElement === inp;
+    if (wasFocused) inp.blur();
+    inp.value = "";
+    setTimeout(() => {
+      inp.value = "";
+      if (wasFocused) inp.focus();
+    }, 0);
+  }
+
+  function bindImeEnter(inp, sendFn) {
+    if (!inp || inp.dataset.imeBound === "1") return;
+    inp.dataset.imeBound = "1";
+    let composing = false;
+    let pendingSendAt = 0;
+    let lastCompEndAt = 0;
+
+    inp.addEventListener("compositionstart", () => {
+      composing = true;
+    });
+
+    inp.addEventListener("compositionend", () => {
+      composing = false;
+      lastCompEndAt = Date.now();
+      if (pendingSendAt && Date.now() - pendingSendAt < 120) {
+        pendingSendAt = 0;
+        setTimeout(() => sendFn(), 0);
+      }
+    });
+
+    inp.addEventListener("keydown", e => {
+      if (e.key !== "Enter" && e.keyCode !== 13) return;
+      if (e.shiftKey) return;
+
+      // Chrome/Firefox macOS Telex: Enter fires while still composing -> wait for compositionend to commit last VN word
+      if (e.isComposing || composing) {
+        pendingSendAt = Date.now();
+        return;
+      }
+
+      // Safari macOS Telex: compositionend fires ~0-15ms right before keydown(Enter, keyCode=229)
+      if (e.keyCode === 229) {
+        e.preventDefault();
+        if (Date.now() - lastCompEndAt < 100) {
+          setTimeout(() => sendFn(), 0);
+        } else {
+          pendingSendAt = Date.now();
+        }
+        return;
+      }
+
+      e.preventDefault();
+      // Micro-defer lets EVKey/OpenKey flush final Vietnamese diacritic keystroke before reading value
+      setTimeout(() => sendFn(), 0);
+    });
+  }
+
   function sendChat() {
     const inp = document.getElementById("textInput");
     if (!inp) return;
     const v = inp.value.trim();
     if (!v) return;
-    inp.value = "";
+    resetChatInputSafely(inp);
     handleChatInput(v, "text");
   }
 
@@ -1095,6 +1206,7 @@
       ...save.parentConsent,
       verifiedAdult: Boolean(document.getElementById("consentVerifiedAdult")?.checked),
       allowPushToTalk: Boolean(document.getElementById("consentPushToTalk")?.checked),
+      allowPairVideoCall: document.getElementById("consentPairVideoCall") ? Boolean(document.getElementById("consentPairVideoCall").checked) : true,
       storeRawAudio: false,
       sessionLimitMin: Number(document.getElementById("parentSessionLimitSelect")?.value || 15),
       defaultHintLevel: Number(document.getElementById("parentDefaultHintSelect")?.value ?? 1)
@@ -1195,6 +1307,8 @@
     if (vAdult) vAdult.checked = Boolean(save.parentConsent.verifiedAdult);
     const ptt = document.getElementById("consentPushToTalk");
     if (ptt) ptt.checked = Boolean(save.parentConsent.allowPushToTalk);
+    const pVid = document.getElementById("consentPairVideoCall");
+    if (pVid) pVid.checked = save.parentConsent.allowPairVideoCall !== false;
     const lim = document.getElementById("parentSessionLimitSelect");
     if (lim) lim.value = String(save.parentConsent.sessionLimitMin || 15);
     const hDef = document.getElementById("parentDefaultHintSelect");
@@ -1462,6 +1576,7 @@
     getLang: () => save.lang,
     getApiBase: () => AI_CONFIG.API_BASE,
     getKidProfile: () => save.kidProfile,
+    isPairVideoAllowed: () => save.parentConsent.allowPairVideoCall !== false,
     toggleSound,
     speakVoice,
     playTone,
@@ -1484,6 +1599,7 @@
     toggleChatMic,
     toggleDynamicHints,
     sendChat,
+    resetChatInputSafely,
     requestParentSpace,
     verifyParentGate,
     refreshParentDashboard,
@@ -1517,10 +1633,19 @@
     if (chatMount) chatMount.innerHTML = window.ChickenMascot.render({ size: "md", state: "greeting", id: "chatChickyMascot" });
 
     persist();
+    const pairNick = document.getElementById("pairNickInput");
+    if (pairNick && save.kidProfile.nickname) pairNick.value = save.kidProfile.nickname;
     setLang(save.lang || "vi");
     renderWorldsGrid();
     renderLobby();
     selectChatTopic(CHICKY_TOPICS[0].id);
+    window.ChickenPair?.updatePairControlsUI?.();
+    window.ChickenPair?.renderRaceWelcome?.();
+
+    // Bind Vietnamese IME-safe Enter handlers to all chat inputs
+    bindImeEnter(document.getElementById("textInput"), sendChat);
+    bindImeEnter(document.getElementById("pairChatInput"), () => window.ChickenPair?.sendPairChat?.());
+    bindImeEnter(document.getElementById("missionQuickInput"), () => window.ChickenMission?.sendTypedDemoPhrase?.());
   }
 
   if (document.readyState === "loading") {

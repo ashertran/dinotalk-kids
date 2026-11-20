@@ -10,6 +10,8 @@
   const missionState = {
     active: false,
     paused: false,
+    mode: "demo", // demo | live_pair
+    pairCode: "",
     roomId: null,
     stageIndex: 0,
     role: "map_scout", // map_scout | clue_spotter
@@ -65,9 +67,17 @@
     const badge = document.getElementById("missionBuddyStatus");
     if (el) el.textContent = text;
     if (badge) {
-      badge.textContent = isThinking
-        ? (getLang() === "vi" ? "🤖 Đang lắng nghe... (Demo)" : "🤖 Listening... (Demo)")
-        : (getLang() === "vi" ? "🤖 Bạn giả lập • Chế độ Demo" : "🤖 Simulated Buddy • Demo Mode");
+      if (missionState.mode === "live_pair") {
+        badge.className = "approved-tag";
+        badge.textContent = getLang() === "vi"
+          ? `🟢 Bạn Thật • Phòng #${missionState.pairCode}`
+          : `🟢 Live Buddy • Room #${missionState.pairCode}`;
+      } else {
+        badge.className = "demo-tag";
+        badge.textContent = isThinking
+          ? (getLang() === "vi" ? "🤖 Đang lắng nghe... (Demo)" : "🤖 Listening... (Demo)")
+          : (getLang() === "vi" ? "🤖 Bạn giả lập • Chế độ Demo" : "🤖 Simulated Buddy • Demo Mode");
+      }
     }
   }
 
@@ -225,9 +235,11 @@
     });
   }
 
-  function startMission({ buddy, approvedBuddies = [], role = "map_scout", hintLevel = 1 } = {}) {
+  function startMission({ buddy, approvedBuddies = [], role = "map_scout", hintLevel = 1, mode = "demo", pairCode = "" } = {}) {
     missionState.active = true;
     missionState.paused = false;
+    missionState.mode = mode === "live_pair" ? "live_pair" : "demo";
+    missionState.pairCode = pairCode || "";
     missionState.roomId = null;
     missionState.stageIndex = 0;
     missionState.role = role || "map_scout";
@@ -241,6 +253,9 @@
     missionState.stageSpoken = false;
     missionState.startedAt = Date.now();
     missionState.elapsedSeconds = 0;
+
+    // Show quick Call button inside mission top bar when paired live
+    document.getElementById("missionPairCallBtn")?.classList.toggle("hidden", missionState.mode !== "live_pair");
 
     // Register authoritative private room on backend when available (graceful offline fallback)
     const apiBase = window.ChickenApp?.getApiBase?.();
@@ -372,11 +387,38 @@
     }
 
     if (evalRes.matched) {
+      if (missionState.mode === "live_pair") {
+        window.ChickenPair?.broadcastMissionAction?.({
+          stageIndex: missionState.stageIndex,
+          utterance: text,
+          matched: true,
+          evalRes
+        });
+      }
       advanceCurrentStage(evalRes);
     } else {
+      if (missionState.mode === "live_pair") {
+        window.ChickenPair?.broadcastMissionAction?.({
+          stageIndex: missionState.stageIndex,
+          utterance: text,
+          matched: false
+        });
+      }
       updateChicky(evalRes.chickyState || "hinting", evalRes.chickyReply, evalRes.chickyReplyVi);
       speak(evalRes.chickyReply, { pitch: 1.2 });
       playSfx("soft");
+    }
+  }
+
+  function receivePeerAction(data) {
+    if (!missionState.active || missionState.mode !== "live_pair") return;
+    if (data.utterance) {
+      updateBuddySpeech(`🗣️ "${data.utterance}"`, false);
+      speak(data.utterance, { pitch: getBuddyVoicePitch() });
+    }
+    if (data.matched && Number(data.stageIndex) === missionState.stageIndex) {
+      const evalRes = data.evalRes || window.ChickenData.evaluateUtteranceLocal(missionState.stageIndex, data.utterance || currentStage().targetPhrase, missionState.hintLevel);
+      advanceCurrentStage(evalRes);
     }
   }
 
@@ -599,7 +641,8 @@
     if (!inp) return;
     const v = inp.value.trim();
     if (!v) return;
-    inp.value = "";
+    if (window.ChickenApp?.resetChatInputSafely) window.ChickenApp.resetChatInputSafely(inp);
+    else inp.value = "";
     sendPhrase(v, "text");
   }
 
@@ -609,6 +652,7 @@
     beginGameplayAfterIntro,
     sendPhrase,
     sendTypedDemoPhrase,
+    receivePeerAction,
     tapHotspot,
     setHintLevel,
     requestChickyHint,

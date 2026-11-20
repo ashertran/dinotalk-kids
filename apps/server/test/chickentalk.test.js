@@ -166,13 +166,16 @@ test("Frontend HTML handlers & element IDs match JS controllers without broken l
   const html = fs.readFileSync(path.join(WEB_DIR, "index.html"), "utf8");
   const appJs = fs.readFileSync(path.join(WEB_DIR, "src/app.js"), "utf8");
   const missionJs = fs.readFileSync(path.join(WEB_DIR, "src/mission.js"), "utf8");
+  const pairJs = fs.readFileSync(path.join(WEB_DIR, "src/pair.js"), "utf8");
 
-  // Extract exported keys from window.ChickenApp and window.ChickenMission
+  // Extract exported keys from window.ChickenApp, window.ChickenMission, and window.ChickenPair
   const appExportBlock = appJs.match(/window\.ChickenApp\s*=\s*\{([\s\S]*?)\};/)?.[1] || "";
   const missionExportBlock = missionJs.match(/window\.ChickenMission\s*=\s*\{([\s\S]*?)\};/)?.[1] || "";
+  const pairExportBlock = pairJs.match(/window\.ChickenPair\s*=\s*\{([\s\S]*?)\};/)?.[1] || "";
 
   const appExports = new Set([...appExportBlock.matchAll(/^\s*([a-zA-Z0-9_]+)\s*(?::|,|$)/gm)].map(m => m[1]));
   const missionExports = new Set([...missionExportBlock.matchAll(/^\s*([a-zA-Z0-9_]+)\s*(?::|,|$)/gm)].map(m => m[1]));
+  const pairExports = new Set([...pairExportBlock.matchAll(/^\s*([a-zA-Z0-9_]+)\s*(?::|,|$)/gm)].map(m => m[1]));
 
   for (const m of html.matchAll(/window\.ChickenApp\.([a-zA-Z0-9_]+)\(/g)) {
     assert.ok(appExports.has(m[1]), `Missing window.ChickenApp.${m[1]} referenced in index.html`);
@@ -180,13 +183,20 @@ test("Frontend HTML handlers & element IDs match JS controllers without broken l
   for (const m of html.matchAll(/window\.ChickenMission\.([a-zA-Z0-9_]+)\(/g)) {
     assert.ok(missionExports.has(m[1]), `Missing window.ChickenMission.${m[1]} referenced in index.html`);
   }
+  for (const m of html.matchAll(/window\.ChickenPair\.([a-zA-Z0-9_]+)\(/g)) {
+    assert.ok(pairExports.has(m[1]), `Missing window.ChickenPair.${m[1]} referenced in index.html`);
+  }
 
-  // Verify every static getElementById(...) in app.js & mission.js exists in index.html
+  // Verify every static getElementById(...) in app.js, mission.js & pair.js exists in index.html
   const htmlIds = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map(m => m[1]));
-  // Dynamic mascot IDs injected by ChickenMascot.render(...)
-  ["splashChickyMascot", "homeChickyMascot", "chatChickyMascot", "missionChickyMascot", "missionIntroChicky", "completeChickyMascot", "pauseChicky", "helpChicky"].forEach(id => htmlIds.add(id));
+  // Dynamic IDs injected at runtime by JS renderers
+  [
+    "splashChickyMascot", "homeChickyMascot", "chatChickyMascot", "missionChickyMascot",
+    "missionIntroChicky", "completeChickyMascot", "pauseChicky", "helpChicky",
+    "raceMsg", "raceMicBtn"
+  ].forEach(id => htmlIds.add(id));
 
-  for (const [label, src] of [["app.js", appJs], ["mission.js", missionJs]]) {
+  for (const [label, src] of [["app.js", appJs], ["mission.js", missionJs], ["pair.js", pairJs]]) {
     for (const m of src.matchAll(/getElementById\("([^"]+)"\)/g)) {
       assert.ok(htmlIds.has(m[1]), `Missing DOM id="${m[1]}" referenced in ${label}`);
     }
@@ -211,6 +221,7 @@ test("All static frontend assets & SVG logo are served with HTTP 200", async () 
       "/src/components/world-art.js",
       "/src/components/garden-scene.js",
       "/src/data/mission-data.js",
+      "/src/pair.js",
       "/src/mission.js",
       "/src/app.js"
     ];
@@ -311,4 +322,33 @@ test("Server-authoritative private room enforces buddy approval, 4-stage actions
   } finally {
     await new Promise(resolve => server.close(resolve));
   }
+});
+
+test("Vietnamese IME safety & Unicode word tokenization prevent trailing character jumping in chat", () => {
+  const html = fs.readFileSync(path.join(WEB_DIR, "index.html"), "utf8");
+  const appJs = fs.readFileSync(path.join(WEB_DIR, "src/app.js"), "utf8");
+
+  // Chat inputs must NOT use raw inline onkeydown without IME composition guard
+  for (const id of ["textInput", "pairChatInput", "missionQuickInput"]) {
+    const tagMatch = html.match(new RegExp(`<input[^>]*id="${id}"[^>]*>`));
+    assert.ok(tagMatch, `Expected input#${id} in index.html`);
+    assert.doesNotMatch(tagMatch[0], /onkeydown=/i, `input#${id} must use IME-safe bindImeEnter instead of inline onkeydown`);
+    assert.match(tagMatch[0], /autocorrect="off"/i, `input#${id} should disable browser English autocorrect`);
+  }
+
+  // Verify IME composition handlers & safe reset exist in app.js
+  assert.match(appJs, /compositionstart/);
+  assert.match(appJs, /compositionend/);
+  assert.match(appJs, /e\.isComposing/);
+  assert.match(appJs, /keyCode === 229/);
+  assert.match(appJs, /resetChatInputSafely/);
+
+  // Verify Unicode-aware word tokenization keeps Vietnamese words whole
+  const sample = "Xin chào tiếng Việt and apple!";
+  const tokens = sample.split(/([\p{L}']+)/u).filter(Boolean);
+  assert.ok(tokens.includes("chào"), "Vietnamese word 'chào' must remain intact");
+  assert.ok(tokens.includes("tiếng"), "Vietnamese word 'tiếng' must remain intact");
+  assert.ok(tokens.includes("Việt"), "Vietnamese word 'Việt' must remain intact");
+  assert.ok(tokens.includes("apple"), "English word 'apple' remains selectable");
+  assert.doesNotMatch(appJs, /text\.split\(\/\(\[A-Za-z'\]\+\)\/\)/, "Legacy ASCII-only word splitter must not remain");
 });
