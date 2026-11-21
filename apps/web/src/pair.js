@@ -14,9 +14,19 @@
 
   const seenMsgIds = new Set();
   let mqttClient = null;
+  let mqttOutbox = [];
   let localBus = null;
   let activeConnToken = 0;
   let joinRetryTimer = null;
+
+  const CRITICAL_SIGNAL_TYPES = new Set([
+    "join", "welcome", "rtc_offer", "rtc_reoffer", "rtc_ringing", "rtc_answer",
+    "rtc_answer_ack", "rtc_ice", "rtc_ice_batch", "rtc_reject", "rtc_end"
+  ]);
+  const QOS1_SIGNAL_TYPES = new Set([
+    "join", "welcome", "rtc_offer", "rtc_reoffer", "rtc_ringing", "rtc_answer",
+    "rtc_answer_ack", "rtc_ice_batch", "rtc_reject", "rtc_end"
+  ]);
 
   const pairState = {
     code: "",
@@ -35,9 +45,31 @@
   let localStream = null;
   let remoteStream = null;
   let pendingCandidates = [];
-  let incomingOffer = null; // { sdp, from, kind }
+  let localIceCandidates = [];
+  let remoteIceCount = 0;
+  let localRelayCount = 0;
+  let remoteRelayCount = 0;
+  let seenIceKeys = new Set();
+  let incomingOffer = null; // { sdp, from, kind, callId, senderId }
+  let peerClientId = "";
+  let currentCallId = "";
+  let lastSentOfferPayload = null;
+  let lastSentAnswerPayload = null;
+  let offerAcked = false;
+  let answerAcked = false;
+  let offerRetryTimer = null;
+  let answerRetryTimer = null;
+  let iceResendTimer = null;
   let micEnabled = true;
   let camEnabled = true;
+  let hasRemoteVideo = false;
+  let isCallOfferer = false;
+  let iceRestartAttempted = false;
+  let remotePlaySeq = 0;
+  let autoUnmuteAttempted = false;
+  let callWatchdogTimer = null;
+  let cachedIceServers = null;
+  let iceServersPromise = null;
   let currentFacingMode = "user";
 
   // Pair Mission Invite state
@@ -180,6 +212,7 @@
   function cleanupTransport() {
     activeConnToken++;
     clearInterval(joinRetryTimer);
+    mqttOutbox = [];
     if (mqttClient) {
       try { mqttClient.removeAllListeners(); mqttClient.end(true); } catch {}
       mqttClient = null;
@@ -187,6 +220,16 @@
     if (localBus) {
       try { localBus.close(); } catch {}
       localBus = null;
+    }
+  }
+
+  function flushMqttOutbox() {
+    if (!mqttClient || !mqttClient.connected || !pairState.topic || !mqttOutbox.length) return;
+    const queued = mqttOutbox.splice(0, mqttOutbox.length);
+    for (const item of queued) {
+      try {
+        mqttClient.publish(pairState.topic, JSON.stringify(item.envelope), { qos: item.qos });
+      } catch {}
     }
   }
 
@@ -199,8 +242,16 @@
     if (localBus) {
       try { localBus.postMessage(envelope); } catch {}
     }
+    const qos = QOS1_SIGNAL_TYPES.has(payload.type) ? 1 : 0;
     if (mqttClient && mqttClient.connected && pairState.topic) {
-      try { mqttClient.publish(pairState.topic, JSON.stringify(envelope)); } catch {}
+      try { mqttClient.publish(pairState.topic, JSON.stringify(envelope), { qos }); } catch {}
+    } else if (CRITICAL_SIGNAL_TYPES.has(payload.type) && pairState.topic) {
+      // Buffer signaling messages if mobile browser temporarily suspended WebSocket (e.g. during Camera permission dialog)
+      mqttOutbox.push({ envelope, qos });
+      if (mqttOutbox.length > 60) mqttOutbox.shift();
+      if (mqttClient && !mqttClient.connected && typeof mqttClient.reconnect === "function") {
+        try { mqttClient.reconnect(); } catch {}
+      }
     }
   }
 
@@ -211,6 +262,8 @@
       seenMsgIds.add(data.msgId);
       if (seenMsgIds.size > 400) seenMsgIds.delete(seenMsgIds.values().next().value);
     }
+
+    if (data.senderId) peerClientId = data.senderId;
 
     const myNick = getMyNick();
     const myAv = getMyAvatar();
@@ -270,11 +323,33 @@
       raceRivalScore = Number(data.score || 0);
       updateRaceTrackUI();
     } else if (data.type === "rtc_offer") {
-      handleIncomingOffer(data.sdp, data.from, data.kind || "video");
+      handleIncomingOffer(data.sdp, data.from, data.kind || "video", data.callId || "", data.senderId || "");
+    } else if (data.type === "rtc_ringing") {
+      if (!data.callId || data.callId === currentCallId) {
+        offerAcked = true;
+        clearInterval(offerRetryTimer);
+        const txt = document.getElementById("videoStatusText");
+        if (txt && rtcPc && rtcPc.signalingState === "have-local-offer") {
+          txt.textContent = getLang() === "vi"
+            ? `🔔 Đang đổ chuông trên máy ${pairState.friendNick}...`
+            : `🔔 Ringing on ${pairState.friendNick}'s device...`;
+        }
+        updateCallDiag();
+      }
+    } else if (data.type === "rtc_reoffer") {
+      handleRtcReoffer(data.sdp, data.callId || "");
     } else if (data.type === "rtc_answer") {
-      handleRtcAnswer(data.sdp);
+      handleRtcAnswer(data.sdp, data.callId || "");
+    } else if (data.type === "rtc_answer_ack") {
+      if (!data.callId || data.callId === currentCallId) {
+        answerAcked = true;
+        clearInterval(answerRetryTimer);
+        updateCallDiag();
+      }
     } else if (data.type === "rtc_ice") {
       handleRtcIce(data.candidate);
+    } else if (data.type === "rtc_ice_batch") {
+      handleRtcIceBatch(data.candidates);
     } else if (data.type === "rtc_reject") {
       endCall(false);
       appendPairChat("other", "🌐 Call", `😅 ${pairState.friendNick} declined the call.`);
@@ -327,8 +402,9 @@
     const client = mqtt.connect(MQTT_BROKERS[brokerIdx], {
       clientId: myClientId + "_" + Math.floor(Math.random() * 999),
       clean: true,
-      connectTimeout: 5500,
-      reconnectPeriod: 0
+      keepalive: 20,
+      connectTimeout: 7500,
+      reconnectPeriod: 2500
     });
     mqttClient = client;
 
@@ -337,14 +413,30 @@
       if (!connectedOnce && brokerIdx + 1 < MQTT_BROKERS.length) {
         connectRoom(code, asHost, brokerIdx + 1);
       }
-    }, 5600);
+    }, 7800);
 
     client.on("connect", () => {
       if (myToken !== activeConnToken) return;
+      const isReconnect = connectedOnce;
       connectedOnce = true;
       clearTimeout(fallbackTimer);
-      client.subscribe(pairState.topic, err => {
+      client.subscribe(pairState.topic, { qos: 1 }, err => {
         if (err || myToken !== activeConnToken) return;
+        flushMqttOutbox();
+        if (isReconnect) {
+          if (pairState.callActive) {
+            if (isCallOfferer && !offerAcked && lastSentOfferPayload) {
+              publishRoom(lastSentOfferPayload);
+            }
+            if (!isCallOfferer && !answerAcked && lastSentAnswerPayload) {
+              publishRoom(lastSentAnswerPayload);
+            }
+            if (localIceCandidates.length > 0) {
+              publishRoom({ type: "rtc_ice_batch", candidates: localIceCandidates });
+            }
+          }
+          return;
+        }
         if (asHost) {
           setPairStatus(
             getLang() === "vi" ? `🟡 Phòng #${code} đã mở! Chờ bạn nhập mã...` : `🟡 Room #${code} ready! Share code with buddy...`,
@@ -381,6 +473,30 @@
     });
   }
 
+  // Resume MQTT + signaling + remote video cleanly when iPhone/iPad returns from Camera permission dialog or app switch
+  if (typeof document !== "undefined") {
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) return;
+      if (pairState.code && mqttClient && !mqttClient.connected && typeof mqttClient.reconnect === "function") {
+        try { mqttClient.reconnect(); } catch {}
+      }
+      if (pairState.callActive) {
+        const lv = document.getElementById("localVideo");
+        if (lv && lv.srcObject && lv.paused) lv.play().catch(() => {});
+        tryPlayRemoteVideo(false);
+        // Replay unacknowledged offer/answer + ICE candidates in case iOS suspended WebSocket during Camera prompt!
+        setTimeout(() => {
+          if (!pairState.callActive) return;
+          if (isCallOfferer && !offerAcked && lastSentOfferPayload) publishRoom(lastSentOfferPayload);
+          if (!isCallOfferer && !answerAcked && lastSentAnswerPayload) publishRoom(lastSentAnswerPayload);
+          if (localIceCandidates.length > 0 && rtcPc && rtcPc.iceConnectionState !== "connected" && rtcPc.iceConnectionState !== "completed") {
+            publishRoom({ type: "rtc_ice_batch", candidates: localIceCandidates });
+          }
+        }, 400);
+      }
+    });
+  }
+
   function onFriendConnected(nick, avatar) {
     pairState.connected = true;
     pairState.friendNick = nick || "Friend";
@@ -401,6 +517,7 @@
     );
     const rivalLbl = document.getElementById("raceRivalLabel");
     if (rivalLbl) rivalLbl.textContent = `${pairState.friendAvatar} ${pairState.friendNick}`;
+    loadIceServers().catch(() => {});
     playFanfare();
   }
 
@@ -527,12 +644,56 @@
   }
 
   // ================= 3. WEBRTC 1-SCREEN SPLIT VIDEO & VOICE CALL =================
-  function getIceServers() {
+  function getDefaultIceServers() {
+    const custom = Array.isArray(window.CHICKENTALK_TURN_SERVERS) ? window.CHICKENTALK_TURN_SERVERS : [];
     return [
       { urls: "stun:stun.l.google.com:19302" },
       { urls: "stun:stun1.l.google.com:19302" },
-      { urls: "stun:stun.cloudflare.com:3478" }
+      { urls: "stun:stun.cloudflare.com:3478" },
+      { urls: "stun:stun.relay.metered.ca:80" },
+      ...custom,
+      // Split UDP & TCP TURN into separate entries (avoids WebKit stalling if one transport fails or returns 401)
+      {
+        urls: "turn:turn.evan-brass.net:3478?transport=udp",
+        username: "user",
+        credential: "password"
+      },
+      {
+        urls: "turn:turn.evan-brass.net:3478?transport=tcp",
+        username: "user",
+        credential: "password"
+      }
     ];
+  }
+
+  function loadIceServers() {
+    if (cachedIceServers) return Promise.resolve(cachedIceServers);
+    if (iceServersPromise) return iceServersPromise;
+    const fallback = getDefaultIceServers();
+    const apiBase = window.ChickenApp?.getApiBase?.() || "";
+    if (!apiBase) {
+      cachedIceServers = fallback;
+      return Promise.resolve(cachedIceServers);
+    }
+    iceServersPromise = (async () => {
+      try {
+        const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+        const timer = ctrl ? setTimeout(() => ctrl.abort(), 1600) : null;
+        const res = await fetch(`${apiBase}/api/rtc/ice`, ctrl ? { signal: ctrl.signal } : undefined);
+        if (timer) clearTimeout(timer);
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data?.iceServers) && data.iceServers.length > 0) {
+            const custom = Array.isArray(window.CHICKENTALK_TURN_SERVERS) ? window.CHICKENTALK_TURN_SERVERS : [];
+            cachedIceServers = [...data.iceServers, ...custom];
+            return cachedIceServers;
+          }
+        }
+      } catch {}
+      cachedIceServers = fallback;
+      return cachedIceServers;
+    })();
+    return iceServersPromise;
   }
 
   function updateCamHeaderBadge(state) {
@@ -578,7 +739,7 @@
     }
     if (btn) btn.disabled = true;
     try {
-      const st = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: true });
+      const st = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "user" } }, audio: true });
       st.getTracks().forEach(tr => tr.stop());
       updateCamHeaderBadge("granted");
       if (resEl) {
@@ -592,140 +753,680 @@
       if (resEl) {
         resEl.style.color = "var(--ct-danger)";
         resEl.textContent = getLang() === "vi"
-          ? "🔴 Chưa cấp quyền Camera/Mic — vẫn có thể gọi thoại hoặc nhắn tin cặp bình thường!"
-          : "🔴 Camera/Mic denied — you can still chat and play in Pair Room!";
+          ? "🔴 Chưa cấp quyền Camera/Mic — vẫn có thể gọi thoại hoặc xem video từ bạn bình thường!"
+          : "🔴 Camera/Mic denied — you can still chat and view your buddy's video!";
       }
     } finally {
       if (btn) btn.disabled = false;
     }
   }
 
-  function tryPlayRemoteVideo() {
+  function primeVideoElement(videoEl, muted) {
+    if (!videoEl) return;
+    videoEl.playsInline = true;
+    videoEl.autoplay = true;
+    videoEl.setAttribute("playsinline", "");
+    videoEl.setAttribute("webkit-playsinline", "");
+    videoEl.muted = Boolean(muted);
+    if (muted) videoEl.setAttribute("muted", "");
+    else videoEl.removeAttribute("muted");
+  }
+
+  function updateCallDiag() {
+    const diagEl = document.getElementById("callDiagText");
+    if (!diagEl) return;
+    if (!pairState.callActive) {
+      diagEl.textContent = "";
+      return;
+    }
+    const rv = document.getElementById("remoteVideo");
+    const sig = rtcPc ? rtcPc.signalingState : "init";
+    const ice = rtcPc ? rtcPc.iceConnectionState : "new";
+    const vidInfo = rv && rv.videoWidth > 0 ? `${rv.videoWidth}x${rv.videoHeight}` : (hasRemoteVideo ? "track-live" : "waiting");
+    const relayInfo = (localRelayCount > 0 || remoteRelayCount > 0) ? ` • relay:L${localRelayCount}/R${remoteRelayCount}` : "";
+    diagEl.textContent = `sig:${sig} • ice:${ice} • cand:L${localIceCandidates.length}/R${remoteIceCount}${relayInfo} • vid:${vidInfo}`;
+  }
+
+  function syncCallDockVisibility() {
+    const dock = document.getElementById("pairCallDock");
+    const lv = document.getElementById("localVideo");
+    const rv = document.getElementById("remoteVideo");
+    const localPane = document.getElementById("localCamPane");
+    const remotePane = document.getElementById("remoteCamPane");
+    const localPh = document.getElementById("localCamPlaceholder");
+    const remotePh = document.getElementById("remoteCamPlaceholder");
+
+    const localHasLiveVideo = Boolean(
+      camEnabled && localStream && localStream.getVideoTracks().some(tr => tr.readyState === "live" && tr.enabled)
+    );
+    const remoteHasLiveVideo = Boolean(
+      hasRemoteVideo && remoteStream && remoteStream.getVideoTracks().some(tr => tr.readyState === "live")
+    );
+    // On iOS/iPadOS Safari, readyState >= 2 or !paused with active video track means frames are decoding
+    const remoteRendered = Boolean(
+      remoteHasLiveVideo && rv && (rv.videoWidth > 0 || rv.readyState >= 2 || (!rv.paused && rv.currentTime > 0))
+    );
+    const localRendered = Boolean(localHasLiveVideo && lv && (lv.videoWidth > 0 || lv.readyState >= 2));
+
+    if (dock && (pairState.callActive || remoteHasLiveVideo)) {
+      dock.classList.remove("hidden");
+      // NEVER hide .split-camera-screen when call is video or peer is sending video!
+      const pureAudio = pairState.callKind === "audio" && !localHasLiveVideo && !remoteHasLiveVideo;
+      dock.classList.toggle("audio-only", pureAudio);
+    }
+    if (localPane) localPane.classList.toggle("has-video", localRendered);
+    if (remotePane) remotePane.classList.toggle("has-video", remoteRendered);
+
+    if (localPh && !localRendered) {
+      localPh.textContent = localHasLiveVideo
+        ? (getLang() === "vi" ? "📷 Đang mở camera của bạn..." : "📷 Starting your camera...")
+        : (getLang() === "vi" ? "🎤 Chỉ bật Mic (không dùng Cam)" : "🎤 Audio-only (Camera off)");
+    }
+    if (remotePh && !remoteRendered) {
+      remotePh.textContent = remoteHasLiveVideo
+        ? (getLang() === "vi" ? "📡 Đang tải hình ảnh từ bạn..." : "📡 Loading buddy's video...")
+        : (getLang() === "vi" ? `⏳ Đang chờ video từ ${pairState.friendNick}...` : `⏳ Waiting for ${pairState.friendNick}'s video...`);
+    }
+    updateCallDiag();
+  }
+
+  function tryAutoUnmuteRemote() {
+    if (autoUnmuteAttempted) return;
     const rv = document.getElementById("remoteVideo");
     const unmuteBtn = document.getElementById("unmuteVideoBtn");
-    if (!rv || !rv.srcObject) return;
-    rv.setAttribute("playsinline", "true");
-    rv.setAttribute("webkit-playsinline", "true");
+    if (!rv || !rv.srcObject || !rv.muted) return;
+    autoUnmuteAttempted = true;
+
+    rv.muted = false;
+    rv.removeAttribute("muted");
     const p = rv.play();
     if (p && typeof p.then === "function") {
       p.then(() => {
-        if (!rv.muted && unmuteBtn) unmuteBtn.classList.add("hidden");
+        unmuteBtn?.classList.add("hidden");
       }).catch(() => {
+        // iOS Safari requires a tap to unmute audio -> keep video playing visibly muted & show button!
         rv.muted = true;
+        rv.setAttribute("muted", "");
         rv.play().catch(() => {});
         unmuteBtn?.classList.remove("hidden");
       });
     }
   }
 
+  function tryPlayRemoteVideo(forceUnmute = false) {
+    const rv = document.getElementById("remoteVideo");
+    const unmuteBtn = document.getElementById("unmuteVideoBtn");
+    const playOv = document.getElementById("remotePlayOverlay");
+    if (!rv || !rv.srcObject) return;
+
+    const seq = ++remotePlaySeq;
+    rv.playsInline = true;
+    rv.autoplay = true;
+    rv.setAttribute("playsinline", "");
+    rv.setAttribute("webkit-playsinline", "");
+
+    if (forceUnmute) {
+      rv.muted = false;
+      rv.removeAttribute("muted");
+    } else if (!autoUnmuteAttempted) {
+      // CRITICAL iOS/iPadOS WebKit fix: start playback muted so remote video ALWAYS renders immediately!
+      rv.muted = true;
+      rv.setAttribute("muted", "");
+    }
+
+    const p = rv.play();
+    if (p && typeof p.then === "function") {
+      p.then(() => {
+        if (seq !== remotePlaySeq) return;
+        playOv?.classList.add("hidden");
+        syncCallDockVisibility();
+        if (!forceUnmute && rv.muted) {
+          unmuteBtn?.classList.remove("hidden");
+          // Gently attempt auto-unmute once frames are flowing (succeeds on desktop & iOS after mic grant)
+          setTimeout(() => tryAutoUnmuteRemote(), 350);
+        } else if (!rv.muted) {
+          unmuteBtn?.classList.add("hidden");
+        }
+      }).catch(err => {
+        if (seq !== remotePlaySeq) return;
+        if (err && err.name === "AbortError") {
+          setTimeout(() => tryPlayRemoteVideo(forceUnmute), 220);
+          return;
+        }
+        // Autoplay policy block on iOS Safari / Mobile Chrome -> force muted so VIDEO renders immediately!
+        rv.muted = true;
+        rv.setAttribute("muted", "");
+        unmuteBtn?.classList.remove("hidden");
+        const pMuted = rv.play();
+        if (pMuted && typeof pMuted.then === "function") {
+          pMuted.then(() => {
+            playOv?.classList.add("hidden");
+            syncCallDockVisibility();
+          }).catch(() => {
+            // Even muted autoplay blocked (e.g. iOS Low Power Mode) -> show tap-to-play overlay directly on video
+            playOv?.classList.remove("hidden");
+            syncCallDockVisibility();
+          });
+        }
+      });
+    } else {
+      syncCallDockVisibility();
+    }
+  }
+
   function unmuteRemoteVideo() {
     const rv = document.getElementById("remoteVideo");
     if (!rv) return;
+    rv.playsInline = true;
     rv.muted = false;
-    rv.play().catch(() => {});
+    rv.removeAttribute("muted");
     document.getElementById("unmuteVideoBtn")?.classList.add("hidden");
+    document.getElementById("remotePlayOverlay")?.classList.add("hidden");
+    const p = rv.play();
+    if (p && typeof p.then === "function") {
+      p.then(() => syncCallDockVisibility()).catch(() => {
+        // Fallback: if audio still fails, ensure video plays muted
+        rv.muted = true;
+        rv.setAttribute("muted", "");
+        rv.play().catch(() => {});
+        document.getElementById("unmuteVideoBtn")?.classList.remove("hidden");
+      });
+    }
   }
 
-  async function getMediaSafe(kind = "video") {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      openCamPermModal("no_https");
-      return null;
-    }
-    if (localStream) return localStream;
+  function hasLiveLocalTracks(wantVideo) {
+    if (!localStream) return false;
+    const live = localStream.getTracks().filter(tr => tr.readyState === "live");
+    if (!live.length) return false;
+    if (wantVideo && !live.some(tr => tr.kind === "video")) return false;
+    return true;
+  }
 
+  async function getMediaSafe(kind = "video", allowReceiveOnly = false) {
     const wantVideo = kind === "video";
-    try {
-      localStream = await navigator.mediaDevices.getUserMedia({
-        video: wantVideo ? { facingMode: currentFacingMode, width: { ideal: 640 }, height: { ideal: 480 } } : false,
-        audio: { echoCancellation: true, noiseSuppression: true }
-      });
-      updateCamHeaderBadge("granted");
-    } catch {
-      try {
-        localStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
-      } catch {
+    if (hasLiveLocalTracks(wantVideo)) {
+      syncCallDockVisibility();
+      return localStream;
+    }
+    if (localStream) {
+      localStream.getTracks().forEach(tr => { try { tr.stop(); } catch {} });
+      localStream = null;
+    }
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      if (allowReceiveOnly) {
+        localStream = new MediaStream();
+        appendPairChat(
+          "other",
+          "🌐 Call",
+          getLang() === "vi"
+            ? "ℹ️ Mở bằng HTTPS để bật camera của bạn — vẫn đang kết nối để xem video từ bạn đồng hành!"
+            : "ℹ️ HTTPS is needed for your own camera — still connecting to watch your buddy's video!"
+        );
+      } else {
+        openCamPermModal("no_https");
+        return null;
+      }
+    } else {
+      // Cascading constraints: desktop webcams & mobile browsers vary widely on facingMode/resolution
+      const attempts = wantVideo
+        ? [
+            {
+              video: {
+                facingMode: { ideal: currentFacingMode },
+                width: { ideal: 640, max: 1280 },
+                height: { ideal: 480, max: 720 },
+                frameRate: { ideal: 24, max: 30 }
+              },
+              audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+            },
+            { video: true, audio: true },
+            { video: true, audio: false },
+            { video: false, audio: true }
+          ]
+        : [
+            { video: false, audio: { echoCancellation: true, noiseSuppression: true } },
+            { video: false, audio: true }
+          ];
+
+      for (const constraints of attempts) {
+        try {
+          localStream = await navigator.mediaDevices.getUserMedia(constraints);
+          break;
+        } catch {}
+      }
+
+      if (localStream) {
+        updateCamHeaderBadge("granted");
+      } else if (allowReceiveOnly) {
+        updateCamHeaderBadge("denied");
+        localStream = new MediaStream();
+        appendPairChat(
+          "other",
+          "🌐 Call",
+          getLang() === "vi"
+            ? "ℹ️ Không mở được Camera/Mic trên máy này — đang kết nối chế độ chỉ xem & nghe video từ bạn!"
+            : "ℹ️ Local Camera/Mic unavailable — connecting in receive-only mode so you can still see & hear your buddy!"
+        );
+      } else {
         updateCamHeaderBadge("denied");
         openCamPermModal("denied");
         return null;
       }
     }
 
-    micEnabled = true;
+    micEnabled = localStream.getAudioTracks().length > 0;
     camEnabled = localStream.getVideoTracks().length > 0;
-    const lv = document.getElementById("localVideo");
-    if (lv) {
-      lv.srcObject = localStream;
-      lv.muted = true;
-      lv.play().catch(() => {});
-    }
 
     pairState.callActive = true;
-    pairState.callKind = camEnabled ? "video" : "audio";
-    const dock = document.getElementById("pairCallDock");
-    if (dock) {
-      dock.classList.remove("hidden");
-      dock.classList.toggle("audio-only", !camEnabled);
+    pairState.callKind = wantVideo ? "video" : "audio";
+    // Reveal dock BEFORE attaching video streams (critical for iOS Safari WebKit!)
+    syncCallDockVisibility();
+
+    const lv = document.getElementById("localVideo");
+    if (lv) {
+      primeVideoElement(lv, true);
+      lv.srcObject = camEnabled ? localStream : null;
+      lv.onloadedmetadata = () => {
+        lv.play().catch(() => {});
+        syncCallDockVisibility();
+      };
+      lv.onplaying = () => syncCallDockVisibility();
+      if (camEnabled) lv.play().catch(() => {});
     }
+
     updatePairControlsUI();
     updateMediaBtns();
+    syncCallDockVisibility();
     return localStream;
   }
 
-  function createPeerConnection() {
-    if (rtcPc) rtcPc.close();
-    rtcPc = new RTCPeerConnection({ iceServers: getIceServers(), iceCandidatePoolSize: 4 });
-    remoteStream = null;
+  async function attachLocalTracksToPeer(pc, stream, asOfferer, wantVideo) {
+    const audioTrack = stream ? stream.getAudioTracks().find(t => t.readyState === "live") : null;
+    const videoTrack = wantVideo && stream ? stream.getVideoTracks().find(t => t.readyState === "live") : null;
+
+    if (asOfferer) {
+      if (audioTrack) pc.addTrack(audioTrack, stream);
+      else pc.addTransceiver("audio", { direction: "recvonly" });
+
+      if (wantVideo) {
+        if (videoTrack) pc.addTrack(videoTrack, stream);
+        else pc.addTransceiver("video", { direction: "recvonly" });
+      }
+      return;
+    }
+
+    // Answerer (called AFTER setRemoteDescription):
+    // Bind directly onto the remote offer's Unified Plan transceivers (prevents iOS/iPadOS Safari
+    // from creating unmatched extra m-lines or leaving the video transceiver stuck at recvonly!)
+    const transceivers = typeof pc.getTransceivers === "function" ? pc.getTransceivers() : [];
+    const bindTrackToTransceiver = async (kind, track) => {
+      if (!track) return;
+      const match = transceivers.find(
+        t => (t.receiver?.track?.kind === kind || t.sender?.track?.kind === kind) && t.direction !== "stopped"
+      );
+      if (match && match.sender) {
+        try {
+          await match.sender.replaceTrack(track);
+          if (typeof match.sender.setStreams === "function" && stream) {
+            try { match.sender.setStreams(stream); } catch {}
+          }
+          match.direction = "sendrecv";
+          return;
+        } catch {}
+      }
+      pc.addTrack(track, stream);
+    };
+
+    await bindTrackToTransceiver("audio", audioTrack);
+    await bindTrackToTransceiver("video", videoTrack);
+  }
+
+  async function reportConnectionTransport(pc) {
+    if (!pc || typeof pc.getStats !== "function") return;
+    try {
+      const stats = await pc.getStats();
+      let selectedPair = null;
+      stats.forEach(report => {
+        if (report.type === "transport" && report.selectedCandidatePairId) {
+          selectedPair = stats.get(report.selectedCandidatePairId);
+        }
+        if (!selectedPair && report.type === "candidate-pair" && (report.selected || report.nominated) && report.state === "succeeded") {
+          selectedPair = report;
+        }
+      });
+      if (!selectedPair) return;
+      const localCand = stats.get(selectedPair.localCandidateId);
+      const remoteCand = stats.get(selectedPair.remoteCandidateId);
+      const isRelay = localCand?.candidateType === "relay" || remoteCand?.candidateType === "relay";
+      const txt = document.getElementById("videoStatusText");
+      if (txt) {
+        if (isRelay) {
+          txt.textContent = getLang() === "vi" ? "🟢 Cuộc gọi 2 chiều đã kết nối (TURN Relay)!" : "🟢 Pair Call Connected (TURN Relay)!";
+        } else {
+          txt.textContent = getLang() === "vi" ? "🟢 Cuộc gọi 2 chiều đã kết nối!" : "🟢 Pair Call Connected!";
+        }
+      }
+    } catch {}
+  }
+
+  function clearSignalRetryTimers() {
+    clearInterval(offerRetryTimer);
+    clearInterval(answerRetryTimer);
+    clearInterval(iceResendTimer);
+    offerRetryTimer = null;
+    answerRetryTimer = null;
+    iceResendTimer = null;
+  }
+
+  function startOfferRetry(payload) {
+    clearInterval(offerRetryTimer);
+    lastSentOfferPayload = payload;
+    offerAcked = false;
+    let tries = 0;
+    offerRetryTimer = setInterval(() => {
+      if (!pairState.callActive || offerAcked || !rtcPc || rtcPc.signalingState !== "have-local-offer" || tries >= 6) {
+        clearInterval(offerRetryTimer);
+        offerRetryTimer = null;
+        return;
+      }
+      tries++;
+      publishRoom(payload);
+    }, 2400);
+  }
+
+  function startAnswerRetry(payload) {
+    clearInterval(answerRetryTimer);
+    lastSentAnswerPayload = payload;
+    answerAcked = false;
+    let tries = 0;
+    answerRetryTimer = setInterval(() => {
+      if (!pairState.callActive || answerAcked || !rtcPc || tries >= 6) {
+        clearInterval(answerRetryTimer);
+        answerRetryTimer = null;
+        return;
+      }
+      if (rtcPc.iceConnectionState === "connected" || rtcPc.iceConnectionState === "completed") {
+        answerAcked = true;
+        clearInterval(answerRetryTimer);
+        answerRetryTimer = null;
+        return;
+      }
+      tries++;
+      publishRoom(payload);
+      if (localIceCandidates.length > 0) {
+        publishRoom({ type: "rtc_ice_batch", candidates: localIceCandidates });
+      }
+    }, 2000);
+  }
+
+  function startIceResendBurst() {
+    clearInterval(iceResendTimer);
+    let bursts = 0;
+    iceResendTimer = setInterval(() => {
+      if (!pairState.callActive || !rtcPc || bursts >= 4) {
+        clearInterval(iceResendTimer);
+        iceResendTimer = null;
+        return;
+      }
+      if (rtcPc.iceConnectionState === "connected" || rtcPc.iceConnectionState === "completed") {
+        clearInterval(iceResendTimer);
+        iceResendTimer = null;
+        return;
+      }
+      bursts++;
+      if (localIceCandidates.length > 0) {
+        publishRoom({ type: "rtc_ice_batch", candidates: localIceCandidates });
+      }
+    }, 1800);
+  }
+
+  function isPolitePeer(remoteSenderId) {
+    const other = remoteSenderId || peerClientId;
+    if (other && other !== myClientId) return myClientId < other;
+    return !pairState.isHost;
+  }
+
+  function startCallWatchdog() {
+    clearInterval(callWatchdogTimer);
+    let ticks = 0;
+    callWatchdogTimer = setInterval(() => {
+      if (!rtcPc || !pairState.callActive) {
+        clearInterval(callWatchdogTimer);
+        return;
+      }
+      ticks++;
+      const rv = document.getElementById("remoteVideo");
+      const iceState = rtcPc.iceConnectionState;
+
+      // Keep nudging remote video if stream arrived but iOS/iPadOS Safari paused it
+      if (hasRemoteVideo && rv && rv.srcObject && (rv.paused || rv.videoWidth === 0)) {
+        tryPlayRemoteVideo(false);
+      }
+      syncCallDockVisibility();
+
+      // At ~9s if still not connected -> show Reconnect button and auto-trigger ICE restart once (offerer)
+      if (ticks === 6 && iceState !== "connected" && iceState !== "completed") {
+        document.getElementById("reconnectCallBtn")?.classList.remove("hidden");
+        if (isCallOfferer && !iceRestartAttempted && rtcPc.remoteDescription) {
+          triggerIceRestart();
+        } else if (isCallOfferer && !rtcPc.remoteDescription && lastSentOfferPayload) {
+          publishRoom(lastSentOfferPayload);
+        }
+      }
+      if (ticks >= 24) clearInterval(callWatchdogTimer);
+    }, 1500);
+  }
+
+  function createPeerConnection(iceServers, { forceRelay = false } = {}) {
+    if (rtcPc) {
+      try { rtcPc.close(); } catch {}
+    }
+    clearInterval(callWatchdogTimer);
+    localIceCandidates = [];
+    remoteIceCount = 0;
+    localRelayCount = 0;
+    remoteRelayCount = 0;
+    seenIceKeys.clear();
+    hasRemoteVideo = false;
+    iceRestartAttempted = false;
+    autoUnmuteAttempted = false;
+    remoteStream = new MediaStream();
+
+    const rtcCfg = {
+      iceServers: iceServers || getDefaultIceServers(),
+      iceCandidatePoolSize: 4,
+      bundlePolicy: "max-bundle",
+      rtcpMuxPolicy: "require"
+    };
+    if (forceRelay) rtcCfg.iceTransportPolicy = "relay";
+    rtcPc = new RTCPeerConnection(rtcCfg);
 
     const rv = document.getElementById("remoteVideo");
     if (rv) {
-      rv.srcObject = null;
-      rv.muted = false;
-    }
-
-    if (localStream) {
-      localStream.getTracks().forEach(tr => rtcPc.addTrack(tr, localStream));
+      // CRITICAL iOS/iPadOS Safari fix: prime muted=true so incoming remote video frames paint IMMEDIATELY!
+      primeVideoElement(rv, true);
+      rv.onloadedmetadata = () => {
+        syncCallDockVisibility();
+        tryPlayRemoteVideo(false);
+      };
+      rv.onloadeddata = () => {
+        syncCallDockVisibility();
+        tryPlayRemoteVideo(false);
+      };
+      rv.oncanplay = () => {
+        syncCallDockVisibility();
+        tryPlayRemoteVideo(false);
+      };
+      rv.onplaying = () => {
+        document.getElementById("remotePlayOverlay")?.classList.add("hidden");
+        syncCallDockVisibility();
+      };
+      rv.ontimeupdate = () => {
+        if (rv.videoWidth > 0 && !document.getElementById("remoteCamPane")?.classList.contains("has-video")) {
+          syncCallDockVisibility();
+        }
+      };
+      rv.onresize = () => syncCallDockVisibility();
     }
 
     rtcPc.ontrack = ev => {
       if (!rv) return;
+      let addedNewVideoTrack = false;
+      // Prefer native WebRTC stream when provided, while tracking newly arrived video tracks for iOS Safari decoder wake-up
       if (ev.streams && ev.streams[0]) {
-        if (rv.srcObject !== ev.streams[0]) rv.srcObject = ev.streams[0];
+        const prevSame = rv.srcObject === ev.streams[0];
+        remoteStream = ev.streams[0];
+        for (const tr of remoteStream.getTracks()) {
+          if (tr.kind === "video") {
+            hasRemoteVideo = true;
+            if (prevSame && ev.track && ev.track.kind === "video") addedNewVideoTrack = true;
+          }
+          tr.onunmute = () => {
+            if (tr.kind === "video") hasRemoteVideo = true;
+            syncCallDockVisibility();
+            tryPlayRemoteVideo(false);
+          };
+          tr.onended = () => {
+            hasRemoteVideo = remoteStream.getVideoTracks().some(t => t.readyState === "live");
+            syncCallDockVisibility();
+          };
+        }
       } else if (ev.track) {
         if (!remoteStream) remoteStream = new MediaStream();
-        remoteStream.addTrack(ev.track);
-        if (rv.srcObject !== remoteStream) rv.srcObject = remoteStream;
+        if (!remoteStream.getTracks().some(x => x.id === ev.track.id)) {
+          remoteStream.addTrack(ev.track);
+          if (ev.track.kind === "video") addedNewVideoTrack = true;
+        }
+        if (ev.track.kind === "video") hasRemoteVideo = true;
+        ev.track.onunmute = () => {
+          if (ev.track.kind === "video") hasRemoteVideo = true;
+          syncCallDockVisibility();
+          tryPlayRemoteVideo(false);
+        };
+        ev.track.onended = () => {
+          hasRemoteVideo = remoteStream.getVideoTracks().some(t => t.readyState === "live");
+          syncCallDockVisibility();
+        };
       }
-      if (ev.track) ev.track.onunmute = () => tryPlayRemoteVideo();
-      document.getElementById("pairCallDock")?.classList.remove("hidden");
-      tryPlayRemoteVideo();
+
+      // Ensure dock is visible BEFORE attaching srcObject (crucial on iOS/iPadOS Safari!)
+      syncCallDockVisibility();
+      if (addedNewVideoTrack && rv.srcObject === remoteStream) {
+        remoteStream = new MediaStream(remoteStream.getTracks());
+        rv.srcObject = remoteStream;
+      } else if (rv.srcObject !== remoteStream) {
+        rv.srcObject = remoteStream;
+      }
+      tryPlayRemoteVideo(false);
     };
 
-    rtcPc.oniceconnectionstatechange = () => {
-      const st = rtcPc ? rtcPc.iceConnectionState : "";
+    const handleConnUpdate = () => {
+      if (!rtcPc) return;
+      const ice = rtcPc.iceConnectionState;
+      const conn = rtcPc.connectionState || "";
       const txt = document.getElementById("videoStatusText");
-      if (!txt) return;
-      if (st === "connected" || st === "completed") {
-        txt.textContent = getLang() === "vi" ? "🟢 Cuộc gọi 2 chiều đã kết nối!" : "🟢 Pair Call Connected!";
-        tryPlayRemoteVideo();
-      } else if (st === "failed" || st === "disconnected") {
-        txt.textContent = getLang() === "vi" ? "⚠️ Mạng đang chặn kết nối trực tiếp (thử WiFi cùng mạng)." : "⚠️ Direct connection interrupted.";
-      } else if (st === "checking") {
-        txt.textContent = getLang() === "vi" ? "🟡 Đang kết nối âm thanh & hình ảnh..." : "🟡 Connecting call...";
+
+      if (ice === "connected" || ice === "completed" || conn === "connected") {
+        answerAcked = true;
+        offerAcked = true;
+        clearSignalRetryTimers();
+        document.getElementById("reconnectCallBtn")?.classList.add("hidden");
+        if (txt) txt.textContent = getLang() === "vi" ? "🟢 Cuộc gọi 2 chiều đã kết nối!" : "🟢 Pair Call Connected!";
+        reportConnectionTransport(rtcPc);
+        tryPlayRemoteVideo(false);
+        syncCallDockVisibility();
+      } else if (ice === "failed" || conn === "failed") {
+        document.getElementById("reconnectCallBtn")?.classList.remove("hidden");
+        if (txt) {
+          txt.textContent = getLang() === "vi"
+            ? "🟡 Đang tự động kết nối lại qua máy chủ chuyển tiếp..."
+            : "🟡 Reconnecting via TURN relay...";
+        }
+        if (!iceRestartAttempted && rtcPc.remoteDescription) {
+          triggerIceRestart();
+        } else if (txt) {
+          txt.textContent = getLang() === "vi"
+            ? "⚠️ Mạng đang chặn P2P — bấm '🔄 Kết nối lại' nhé!"
+            : "⚠️ Network blocked P2P — tap '🔄 Reconnect'!";
+        }
+      } else if (ice === "disconnected") {
+        document.getElementById("reconnectCallBtn")?.classList.remove("hidden");
+        if (txt) txt.textContent = getLang() === "vi" ? "🟡 Kết nối tạm gián đoạn, đang chờ phục hồi..." : "🟡 Connection interrupted, recovering...";
+        setTimeout(() => {
+          if (rtcPc && rtcPc.iceConnectionState === "disconnected" && isCallOfferer && !iceRestartAttempted) {
+            triggerIceRestart();
+          }
+        }, 3500);
+      } else if (ice === "checking") {
+        if (txt) txt.textContent = getLang() === "vi" ? "🟡 Đang kết nối âm thanh & hình ảnh..." : "🟡 Connecting audio & video...";
       }
+      updateCallDiag();
     };
+
+    rtcPc.oniceconnectionstatechange = handleConnUpdate;
+    rtcPc.onconnectionstatechange = handleConnUpdate;
+    rtcPc.onsignalingstatechange = () => updateCallDiag();
 
     rtcPc.onicecandidate = ev => {
-      if (ev.candidate) {
-        publishRoom({
-          type: "rtc_ice",
-          candidate: {
-            candidate: ev.candidate.candidate,
-            sdpMid: ev.candidate.sdpMid,
-            sdpMLineIndex: ev.candidate.sdpMLineIndex
-          }
-        });
+      if (ev.candidate && ev.candidate.candidate) {
+        const candStr = ev.candidate.candidate;
+        if (candStr.includes(" typ relay")) localRelayCount++;
+        const candObj = {
+          candidate: candStr,
+          sdpMid: ev.candidate.sdpMid,
+          sdpMLineIndex: ev.candidate.sdpMLineIndex
+        };
+        localIceCandidates.push(candObj);
+        publishRoom({ type: "rtc_ice", candidate: candObj });
+        updateCallDiag();
+      } else if (!ev.candidate && localIceCandidates.length > 0) {
+        // Gathering complete -> send reliable QoS 1 batch so mobile peer never misses any ICE candidate
+        publishRoom({ type: "rtc_ice_batch", candidates: localIceCandidates });
+        updateCallDiag();
       }
     };
+  }
+
+  async function triggerIceRestart() {
+    if (!rtcPc || !pairState.connected) return;
+    if (rtcPc.signalingState !== "stable") return;
+    iceRestartAttempted = true;
+    localIceCandidates = [];
+    localRelayCount = 0;
+    try {
+      const offer = await rtcPc.createOffer({ iceRestart: true });
+      await rtcPc.setLocalDescription(offer);
+      publishRoom({
+        type: "rtc_reoffer",
+        callId: currentCallId,
+        sdp: { type: offer.type, sdp: offer.sdp }
+      });
+      startIceResendBurst();
+      updateCallDiag();
+    } catch {}
+  }
+
+  async function reconnectCall() {
+    if (!pairState.connected) return;
+    if (!rtcPc) {
+      startCall(pairState.callKind || "video");
+      return;
+    }
+    const txt = document.getElementById("videoStatusText");
+    if (txt) txt.textContent = getLang() === "vi" ? "🔄 Đang kết nối lại video..." : "🔄 Reconnecting video...";
+    iceRestartAttempted = false;
+    if (rtcPc.signalingState === "stable") {
+      await triggerIceRestart();
+    } else if (isCallOfferer && lastSentOfferPayload) {
+      publishRoom(lastSentOfferPayload);
+      if (localIceCandidates.length > 0) publishRoom({ type: "rtc_ice_batch", candidates: localIceCandidates });
+    } else if (!isCallOfferer && lastSentAnswerPayload) {
+      publishRoom(lastSentAnswerPayload);
+      if (localIceCandidates.length > 0) publishRoom({ type: "rtc_ice_batch", candidates: localIceCandidates });
+    }
+    tryPlayRemoteVideo(false);
+    updateCallDiag();
   }
 
   async function startCall(kind = "video") {
@@ -742,9 +1443,24 @@
     const allowVideo = window.ChickenApp?.isPairVideoAllowed?.() !== false;
     const effectiveKind = kind === "video" && allowVideo ? "video" : "audio";
 
+    // Prime video elements synchronously inside the user tap gesture (unlocks iOS/iPadOS Safari playback!)
+    currentCallId = "call_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6);
+    pairState.callActive = true;
+    pairState.callKind = effectiveKind;
+    isCallOfferer = true;
     pendingCandidates = [];
-    const stream = await getMediaSafe(effectiveKind);
-    if (!stream) return;
+    syncCallDockVisibility();
+    primeVideoElement(document.getElementById("localVideo"), true);
+    primeVideoElement(document.getElementById("remoteVideo"), true);
+
+    const [iceServers, stream] = await Promise.all([
+      loadIceServers(),
+      getMediaSafe(effectiveKind, true)
+    ]);
+    if (!stream) {
+      endCall(false);
+      return;
+    }
 
     const txt = document.getElementById("videoStatusText");
     if (txt) {
@@ -753,19 +1469,96 @@
         : (getLang() === "vi" ? `🟡 Đang gọi Thoại tới ${pairState.friendNick}...` : `🟡 Voice calling ${pairState.friendNick}...`);
     }
 
-    createPeerConnection();
+    createPeerConnection(iceServers);
+    await attachLocalTracksToPeer(rtcPc, stream, true, effectiveKind === "video");
+
     const offer = await rtcPc.createOffer();
     await rtcPc.setLocalDescription(offer);
-    publishRoom({
+    const offerPayload = {
       type: "rtc_offer",
+      callId: currentCallId,
       sdp: { type: offer.type, sdp: offer.sdp },
       from: getMyNick(),
       kind: effectiveKind
-    });
+    };
+    publishRoom(offerPayload);
+    startOfferRetry(offerPayload);
+    startIceResendBurst();
+    startCallWatchdog();
+    updateCallDiag();
   }
 
-  function handleIncomingOffer(sdp, callerName, kind) {
-    incomingOffer = { sdp, from: callerName || pairState.friendNick, kind: kind || "video" };
+  async function acceptCollidingOffer(sdp, kind, callId) {
+    // Perfect Negotiation: polite peer seamlessly switches from simultaneous outgoing offer to answering peer's offer!
+    clearSignalRetryTimers();
+    currentCallId = callId || currentCallId;
+    isCallOfferer = false;
+    const allowVideo = window.ChickenApp?.isPairVideoAllowed?.() !== false;
+    const effectiveKind = kind === "video" && allowVideo ? "video" : "audio";
+    const [iceServers, stream] = await Promise.all([
+      loadIceServers(),
+      getMediaSafe(effectiveKind, true)
+    ]);
+    if (!stream) return;
+
+    createPeerConnection(iceServers);
+    await rtcPc.setRemoteDescription(new RTCSessionDescription(sdp));
+    await attachLocalTracksToPeer(rtcPc, stream, false, effectiveKind === "video");
+
+    const buffered = pendingCandidates.splice(0, pendingCandidates.length);
+    for (const c of buffered) {
+      const key = `${c.sdpMid || ""}|${c.sdpMLineIndex ?? ""}|${c.candidate}`;
+      seenIceKeys.add(key);
+      try { await rtcPc.addIceCandidate(new RTCIceCandidate(c)); } catch {}
+    }
+
+    const ans = await rtcPc.createAnswer();
+    await rtcPc.setLocalDescription(ans);
+    const ansPayload = {
+      type: "rtc_answer",
+      callId: currentCallId,
+      sdp: { type: ans.type, sdp: ans.sdp }
+    };
+    publishRoom(ansPayload);
+    startAnswerRetry(ansPayload);
+    startIceResendBurst();
+    tryPlayRemoteVideo(false);
+    startCallWatchdog();
+    updateCallDiag();
+  }
+
+  function handleIncomingOffer(sdp, callerName, kind, callId = "", senderId = "") {
+    // Ignore duplicate retries of the exact same call offer while already handling it
+    if (callId && callId === currentCallId && rtcPc && pairState.callActive && !isCallOfferer) {
+      // Peer didn't receive our answer yet -> immediately resend our answer + ICE!
+      if (lastSentAnswerPayload) publishRoom(lastSentAnswerPayload);
+      if (localIceCandidates.length > 0) publishRoom({ type: "rtc_ice_batch", candidates: localIceCandidates });
+      return;
+    }
+    // Ignore duplicate retry while incoming modal is already shown for this callId
+    if (callId && incomingOffer && incomingOffer.callId === callId) {
+      publishRoom({ type: "rtc_ringing", callId });
+      return;
+    }
+
+    // Glare check: both iPhone & iPad tapped "Gọi Video" simultaneously!
+    if (rtcPc && pairState.callActive) {
+      if (rtcPc.signalingState === "have-local-offer") {
+        if (isPolitePeer(senderId)) {
+          acceptCollidingOffer(sdp, kind, callId);
+        } else if (lastSentOfferPayload) {
+          // Impolite peer wins glare -> remind polite peer of our offer
+          publishRoom(lastSentOfferPayload);
+        }
+        return;
+      }
+      handleRtcReoffer(sdp, callId);
+      return;
+    }
+
+    incomingOffer = { sdp, from: callerName || pairState.friendNick, kind: kind || "video", callId, senderId };
+    if (callId) publishRoom({ type: "rtc_ringing", callId });
+
     const txt = document.getElementById("incomingCallText");
     if (txt) {
       const icon = kind === "audio" ? "📞" : "📹";
@@ -780,31 +1573,84 @@
   async function acceptIncomingCall() {
     document.getElementById("incomingCallModal")?.classList.add("hidden");
     if (!incomingOffer) return;
-    const { sdp, kind } = incomingOffer;
+    const { sdp, kind, callId } = incomingOffer;
     incomingOffer = null;
+    currentCallId = callId || ("call_" + Date.now());
 
     const allowVideo = window.ChickenApp?.isPairVideoAllowed?.() !== false;
-    const stream = await getMediaSafe(kind === "video" && allowVideo ? "video" : "audio");
+    const effectiveKind = kind === "video" && allowVideo ? "video" : "audio";
+
+    // Prime video elements synchronously inside the Accept tap gesture (critical on iOS/iPadOS Safari!)
+    pairState.callActive = true;
+    pairState.callKind = effectiveKind;
+    isCallOfferer = false;
+    syncCallDockVisibility();
+    primeVideoElement(document.getElementById("localVideo"), true);
+    primeVideoElement(document.getElementById("remoteVideo"), true);
+
+    const txt = document.getElementById("videoStatusText");
+    if (txt) txt.textContent = getLang() === "vi" ? "🟡 Đang kết nối video & âm thanh..." : "🟡 Connecting video & audio...";
+
+    const [iceServers, stream] = await Promise.all([
+      loadIceServers(),
+      getMediaSafe(effectiveKind, true)
+    ]);
     if (!stream) {
       publishRoom({ type: "rtc_reject" });
-      pendingCandidates = [];
+      endCall(false);
       return;
     }
 
-    const txt = document.getElementById("videoStatusText");
-    if (txt) txt.textContent = getLang() === "vi" ? "🟡 Đang kết nối..." : "🟡 Connecting...";
-
-    createPeerConnection();
+    createPeerConnection(iceServers);
+    // W3C Unified Plan + iOS WebKit order: setRemoteDescription FIRST, then bind tracks onto offer's transceivers!
     await rtcPc.setRemoteDescription(new RTCSessionDescription(sdp));
-    for (const c of pendingCandidates) {
+    await attachLocalTracksToPeer(rtcPc, stream, false, effectiveKind === "video");
+
+    const buffered = pendingCandidates.splice(0, pendingCandidates.length);
+    for (const c of buffered) {
+      const key = `${c.sdpMid || ""}|${c.sdpMLineIndex ?? ""}|${c.candidate}`;
+      seenIceKeys.add(key);
       try { await rtcPc.addIceCandidate(new RTCIceCandidate(c)); } catch {}
     }
-    pendingCandidates = [];
 
     const ans = await rtcPc.createAnswer();
     await rtcPc.setLocalDescription(ans);
-    publishRoom({ type: "rtc_answer", sdp: { type: ans.type, sdp: ans.sdp } });
-    tryPlayRemoteVideo();
+    const ansPayload = {
+      type: "rtc_answer",
+      callId: currentCallId,
+      sdp: { type: ans.type, sdp: ans.sdp }
+    };
+    publishRoom(ansPayload);
+    startAnswerRetry(ansPayload);
+    startIceResendBurst();
+    tryPlayRemoteVideo(false);
+    startCallWatchdog();
+    updateCallDiag();
+  }
+
+  async function handleRtcReoffer(sdp, callId = "") {
+    if (!rtcPc || !sdp) return;
+    try {
+      if (rtcPc.signalingState !== "stable") {
+        try { await rtcPc.setLocalDescription({ type: "rollback" }); } catch {}
+      }
+      await rtcPc.setRemoteDescription(new RTCSessionDescription(sdp));
+      const buffered = pendingCandidates.splice(0, pendingCandidates.length);
+      for (const c of buffered) {
+        try { await rtcPc.addIceCandidate(new RTCIceCandidate(c)); } catch {}
+      }
+      const ans = await rtcPc.createAnswer();
+      await rtcPc.setLocalDescription(ans);
+      const ansPayload = {
+        type: "rtc_answer",
+        callId: callId || currentCallId,
+        sdp: { type: ans.type, sdp: ans.sdp }
+      };
+      publishRoom(ansPayload);
+      startAnswerRetry(ansPayload);
+      tryPlayRemoteVideo(false);
+      updateCallDiag();
+    } catch {}
   }
 
   function rejectIncomingCall() {
@@ -814,45 +1660,110 @@
     publishRoom({ type: "rtc_reject" });
   }
 
-  async function handleRtcAnswer(sdp) {
-    if (!rtcPc) return;
-    await rtcPc.setRemoteDescription(new RTCSessionDescription(sdp));
-    for (const c of pendingCandidates) {
-      try { await rtcPc.addIceCandidate(new RTCIceCandidate(c)); } catch {}
+  async function handleRtcAnswer(sdp, callId = "") {
+    if (!rtcPc || !sdp) return;
+    // Always acknowledge receipt so Callee stops retrying rtc_answer!
+    publishRoom({ type: "rtc_answer_ack", callId: callId || currentCallId });
+    offerAcked = true;
+    clearInterval(offerRetryTimer);
+
+    if (rtcPc.signalingState !== "have-local-offer") {
+      // Already applied answer -> just replay ICE candidates in case callee missed any!
+      if (localIceCandidates.length > 0 && rtcPc.iceConnectionState !== "connected" && rtcPc.iceConnectionState !== "completed") {
+        publishRoom({ type: "rtc_ice_batch", candidates: localIceCandidates });
+      }
+      return;
     }
-    pendingCandidates = [];
-    tryPlayRemoteVideo();
+    try {
+      await rtcPc.setRemoteDescription(new RTCSessionDescription(sdp));
+      const buffered = pendingCandidates.splice(0, pendingCandidates.length);
+      for (const c of buffered) {
+        try { await rtcPc.addIceCandidate(new RTCIceCandidate(c)); } catch {}
+      }
+      // Replay all gathered ICE candidates reliably once callee has answered (fixes missed candidates during iOS permission popup!)
+      if (localIceCandidates.length > 0) {
+        publishRoom({ type: "rtc_ice_batch", candidates: localIceCandidates });
+      }
+      tryPlayRemoteVideo(false);
+      updateCallDiag();
+    } catch {}
   }
 
   async function handleRtcIce(c) {
     if (!c || !c.candidate) return;
+    const key = `${c.sdpMid || ""}|${c.sdpMLineIndex ?? ""}|${c.candidate}`;
+    if (seenIceKeys.has(key)) return;
+    seenIceKeys.add(key);
+    remoteIceCount++;
+    if (String(c.candidate).includes(" typ relay")) remoteRelayCount++;
+
     if (!rtcPc || !rtcPc.remoteDescription) {
       pendingCandidates.push(c);
+      updateCallDiag();
       return;
     }
     try { await rtcPc.addIceCandidate(new RTCIceCandidate(c)); } catch {}
+    updateCallDiag();
+  }
+
+  async function handleRtcIceBatch(candidates) {
+    if (!Array.isArray(candidates)) return;
+    for (const c of candidates) {
+      await handleRtcIce(c);
+    }
   }
 
   async function switchCamera() {
     if (!localStream || !localStream.getVideoTracks().length) return;
+    const prevFacing = currentFacingMode;
     currentFacingMode = currentFacingMode === "user" ? "environment" : "user";
+    const oldTrack = localStream.getVideoTracks()[0];
+    // On mobile phones (Android/iOS), stopping the old camera track FIRST avoids NotReadableError when opening the other lens!
+    if (oldTrack) {
+      try { oldTrack.stop(); } catch {}
+      localStream.removeTrack(oldTrack);
+    }
     try {
-      const ns = await navigator.mediaDevices.getUserMedia({ video: { facingMode: currentFacingMode }, audio: false });
+      let ns;
+      try {
+        ns = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { exact: currentFacingMode }, width: { ideal: 640 }, height: { ideal: 480 } },
+          audio: false
+        });
+      } catch {
+        ns = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: currentFacingMode }, width: { ideal: 640 }, height: { ideal: 480 } },
+          audio: false
+        });
+      }
       const newTrack = ns.getVideoTracks()[0];
-      const oldTrack = localStream.getVideoTracks()[0];
-      if (oldTrack) { localStream.removeTrack(oldTrack); oldTrack.stop(); }
       localStream.addTrack(newTrack);
       const lv = document.getElementById("localVideo");
       if (lv) {
         lv.style.transform = currentFacingMode === "user" ? "scaleX(-1)" : "none";
         lv.srcObject = localStream;
+        lv.play().catch(() => {});
       }
       if (rtcPc) {
-        const sender = rtcPc.getSenders().find(s => s.track && s.track.kind === "video");
-        if (sender) await sender.replaceTrack(newTrack);
+        const videoSender =
+          rtcPc.getTransceivers?.().find(t => t.receiver?.track?.kind === "video" || t.sender?.track?.kind === "video")?.sender ||
+          rtcPc.getSenders().find(s => s.track?.kind === "video");
+        if (videoSender) await videoSender.replaceTrack(newTrack);
       }
+      syncCallDockVisibility();
     } catch {
-      currentFacingMode = currentFacingMode === "user" ? "environment" : "user";
+      currentFacingMode = prevFacing;
+      try {
+        const restore = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: prevFacing } }, audio: false });
+        const tr = restore.getVideoTracks()[0];
+        if (tr) {
+          localStream.addTrack(tr);
+          const lv = document.getElementById("localVideo");
+          if (lv) { lv.srcObject = localStream; lv.play().catch(() => {}); }
+          const videoSender = rtcPc?.getTransceivers?.().find(t => t.receiver?.track?.kind === "video")?.sender;
+          if (videoSender) await videoSender.replaceTrack(tr);
+        }
+      } catch {}
     }
   }
 
@@ -864,6 +1775,7 @@
     } else {
       camEnabled = !camEnabled;
       localStream.getVideoTracks().forEach(tr => (tr.enabled = camEnabled));
+      syncCallDockVisibility();
     }
     updateMediaBtns();
   }
@@ -885,17 +1797,40 @@
 
   function endCall(notify = false) {
     if (notify && pairState.connected) publishRoom({ type: "rtc_end" });
+    clearInterval(callWatchdogTimer);
+    clearSignalRetryTimers();
     incomingOffer = null;
+    currentCallId = "";
+    lastSentOfferPayload = null;
+    lastSentAnswerPayload = null;
+    offerAcked = false;
+    answerAcked = false;
     pendingCandidates = [];
+    localIceCandidates = [];
+    remoteIceCount = 0;
+    localRelayCount = 0;
+    remoteRelayCount = 0;
+    seenIceKeys.clear();
     remoteStream = null;
+    hasRemoteVideo = false;
+    isCallOfferer = false;
+    iceRestartAttempted = false;
+    autoUnmuteAttempted = false;
+    remotePlaySeq++;
     pairState.callActive = false;
-    if (rtcPc) { rtcPc.close(); rtcPc = null; }
-    if (localStream) { localStream.getTracks().forEach(tr => tr.stop()); localStream = null; }
+    if (rtcPc) { try { rtcPc.close(); } catch {} rtcPc = null; }
+    if (localStream) { localStream.getTracks().forEach(tr => { try { tr.stop(); } catch {} }); localStream = null; }
     const lv = document.getElementById("localVideo");
     const rv = document.getElementById("remoteVideo");
     if (lv) lv.srcObject = null;
     if (rv) rv.srcObject = null;
+    const diagEl = document.getElementById("callDiagText");
+    if (diagEl) diagEl.textContent = "";
+    document.getElementById("localCamPane")?.classList.remove("has-video");
+    document.getElementById("remoteCamPane")?.classList.remove("has-video");
     document.getElementById("unmuteVideoBtn")?.classList.add("hidden");
+    document.getElementById("remotePlayOverlay")?.classList.add("hidden");
+    document.getElementById("reconnectCallBtn")?.classList.add("hidden");
     document.getElementById("pairCallDock")?.classList.add("hidden");
     document.getElementById("incomingCallModal")?.classList.add("hidden");
   }
@@ -1241,6 +2176,7 @@
     toggleMediaTrack,
     toggleCallCompact,
     unmuteRemoteVideo,
+    reconnectCall,
     endCall,
     openCamPermModal,
     requestCameraPermission,

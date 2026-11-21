@@ -352,3 +352,55 @@ test("Vietnamese IME safety & Unicode word tokenization prevent trailing charact
   assert.ok(tokens.includes("apple"), "English word 'apple' remains selectable");
   assert.doesNotMatch(appJs, /text\.split\(\/\(\[A-Za-z'\]\+\)\/\)/, "Legacy ASCII-only word splitter must not remain");
 });
+
+test("WebRTC Desktop <-> Mobile video call uses TURN relay, Unified Plan track order, Safari video refresh & MQTT reconnect", async () => {
+  const app = createApp({ skipDbInit: true });
+  const server = await new Promise(resolve => {
+    const s = app.listen(0, () => resolve(s));
+  });
+
+  try {
+    const { port } = server.address();
+    const res = await fetch(`http://127.0.0.1:${port}/api/rtc/ice`);
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.ok(Array.isArray(data.iceServers) && data.iceServers.length >= 2);
+    const allUrls = data.iceServers.flatMap(s => (Array.isArray(s.urls) ? s.urls : [s.urls]));
+    assert.ok(allUrls.some(u => /^stun:/i.test(u)), "Expected at least one STUN server");
+    assert.ok(allUrls.some(u => /^turns?:/i.test(u)), "Expected at least one TURN relay server for mobile NAT/4G");
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+
+  const pairJs = fs.readFileSync(path.join(WEB_DIR, "src/pair.js"), "utf8");
+  const html = fs.readFileSync(path.join(WEB_DIR, "index.html"), "utf8");
+
+  // 1. Mobile MQTT reconnect + QoS 1 outbox + ICE batch replay
+  assert.doesNotMatch(pairJs, /reconnectPeriod:\s*0/, "MQTT reconnectPeriod must not be disabled (mobile suspends WebSockets)");
+  assert.match(pairJs, /mqttOutbox/, "Signaling outbox queue must buffer WebRTC messages during mobile reconnect");
+  assert.match(pairJs, /rtc_ice_batch/, "ICE batch replay must guard against dropped trickle candidates");
+  assert.match(pairJs, /rtc_reoffer/, "ICE restart re-offer handler must exist");
+
+  // 2. Unified Plan Answerer must call setRemoteDescription BEFORE attaching local tracks
+  const acceptFnMatch = pairJs.match(/async function acceptIncomingCall\(\)[\s\S]*?\n  \}/);
+  assert.ok(acceptFnMatch, "acceptIncomingCall function must exist");
+  const acceptBody = acceptFnMatch[0];
+  assert.ok(
+    acceptBody.indexOf("setRemoteDescription") < acceptBody.indexOf("attachLocalTracksToPeer"),
+    "Answerer must call setRemoteDescription before attaching local tracks (Unified Plan)"
+  );
+
+  // 3. Receive-only transceiver + Safari MediaStream re-wrap + iOS/iPadOS WebKit protections
+  assert.match(pairJs, /addTransceiver\("video",\s*\{\s*direction:\s*"recvonly"\s*\}\)/);
+  assert.match(pairJs, /addedNewVideoTrack/);
+  assert.match(pairJs, /new MediaStream\(remoteStream\.getTracks\(\)\)/);
+  assert.match(pairJs, /rtc_ringing/);
+  assert.match(pairJs, /rtc_answer_ack/);
+  assert.match(pairJs, /acceptCollidingOffer/);
+  assert.match(pairJs, /match\.sender\.replaceTrack/);
+  assert.doesNotMatch(pairJs, /turns:turn\.evan-brass\.net:443/, "Dead 401 turns:443 URL must not poison ICE array");
+  assert.match(html, /id="remoteVideo"[^>]*muted/);
+  assert.match(html, /id="callDiagText"/);
+  assert.match(html, /id="remotePlayOverlay"/);
+  assert.match(html, /id="reconnectCallBtn"/);
+});

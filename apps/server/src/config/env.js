@@ -51,5 +51,10 @@ export const config = {
   chatModel: process.env.GEMINI_CHAT_MODEL,
   embedModel: process.env.GEMINI_EMBED_MODEL,
   // Tier 2 fallback LLM. Để trống để tắt.
-  cloudWorkerUrl: process.env.CLOUD_WORKER_URL || ""
+  cloudWorkerUrl: process.env.CLOUD_WORKER_URL || "",
+  // Optional WebRTC TURN config (comma-separated URLs in TURN_URLS or Metered REST URL)
+  turnUrls: (process.env.TURN_URLS || "").split(",").map(s => s.trim()).filter(Boolean),
+  turnUsername: process.env.TURN_USERNAME || "",
+  turnCredential: process.env.TURN_CREDENTIAL || "",
+  meteredTurnApiUrl: process.env.METERED_TURN_API_URL || ""
 };

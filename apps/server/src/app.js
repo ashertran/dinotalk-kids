@@ -64,6 +64,54 @@ export function createApp({ skipDbInit = false } = {}) {
     });
   });
 
+  // WebRTC ICE Servers (STUN + TURN relay for Desktop <-> Mobile 4G/NAT video calls)
+  let cachedMeteredIce = { servers: null, expiresAt: 0 };
+  app.get("/api/rtc/ice", async (_req, res) => {
+    const baseStun = [
+      { urls: "stun:stun.l.google.com:19302" },
+      { urls: "stun:stun1.l.google.com:19302" },
+      { urls: "stun:stun.cloudflare.com:3478" },
+      { urls: "stun:stun.relay.metered.ca:80" }
+    ];
+    const defaultTurn = [
+      {
+        urls: "turn:turn.evan-brass.net:3478?transport=udp",
+        username: "user",
+        credential: "password"
+      },
+      {
+        urls: "turn:turn.evan-brass.net:3478?transport=tcp",
+        username: "user",
+        credential: "password"
+      }
+    ];
+
+    if (config.meteredTurnApiUrl) {
+      if (cachedMeteredIce.servers && Date.now() < cachedMeteredIce.expiresAt) {
+        return res.json({ iceServers: [...baseStun, ...cachedMeteredIce.servers], source: "metered_cache" });
+      }
+      try {
+        const r = await fetch(config.meteredTurnApiUrl, { signal: AbortSignal.timeout(3000) });
+        if (r.ok) {
+          const list = await r.json();
+          if (Array.isArray(list) && list.length > 0) {
+            cachedMeteredIce = { servers: list, expiresAt: Date.now() + 5 * 60 * 1000 };
+            return res.json({ iceServers: [...baseStun, ...list], source: "metered" });
+          }
+        }
+      } catch {}
+    }
+
+    if (config.turnUrls.length > 0) {
+      const customTurn = { urls: config.turnUrls };
+      if (config.turnUsername) customTurn.username = config.turnUsername;
+      if (config.turnCredential) customTurn.credential = config.turnCredential;
+      return res.json({ iceServers: [...baseStun, customTurn, ...defaultTurn], source: "env_turn" });
+    }
+
+    return res.json({ iceServers: [...baseStun, ...defaultTurn], source: "default_turn" });
+  });
+
   app.post("/api/mission/hint", (req, res) => {
     const { stageIndex = 0, utterance = "", hintLevel = 1 } = req.body || {};
     if (utterance && String(utterance).trim()) {

@@ -1919,6 +1919,15 @@ input:focus, select:focus, textarea:focus {
   font-size: 0.9rem;
 }
 
+.call-diag-line {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #BAE6FD;
+  opacity: 0.92;
+  margin-top: 2px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
 .split-camera-screen {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1947,15 +1956,56 @@ input:focus, select:focus, textarea:focus {
   height: 100%;
   object-fit: cover;
   display: block;
+  background: #0F172A;
 }
 
 .cam-pane video#localVideo { transform: scaleX(-1); }
+
+.cam-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 14px;
+  color: #E2E8F0;
+  font-size: 0.85rem;
+  font-weight: 800;
+  background: radial-gradient(circle at center, rgba(30, 41, 59, 0.88), rgba(15, 23, 42, 0.96));
+  pointer-events: none;
+  z-index: 2;
+}
+
+.cam-pane.has-video .cam-placeholder {
+  display: none;
+}
+
+.remote-play-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 4;
+  border: 2.5px solid #FFFFFF;
+  background: rgba(255, 213, 79, 0.96);
+  color: #2D241E;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.88rem;
+  padding: 10px 16px;
+  border-radius: 999px;
+  cursor: pointer;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
+  white-space: nowrap;
+}
 
 .cam-tag {
   position: absolute;
   bottom: 7px;
   left: 7px;
   right: 7px;
+  z-index: 3;
   background: rgba(45, 36, 30, 0.78);
   color: #FFFFFF;
   font-size: 0.76rem;

@@ -14,8 +14,8 @@
   <!-- Backend API base when hosted statically on Netlify -->
   <meta name="chickentalk-api-base" content="https://dinotalk-api.onrender.com" />
   <meta name="dinotalk-api-base" content="https://dinotalk-api.onrender.com" />
-  <link rel="stylesheet" href="./src/styles/tokens.css?v=4" />
-  <link rel="stylesheet" href="./src/styles/main.css?v=4" />
+  <link rel="stylesheet" href="./src/styles/tokens.css?v=6" />
+  <link rel="stylesheet" href="./src/styles/main.css?v=6" />
 </head>
 <body>
 
@@ -100,24 +100,31 @@
   <!-- PERSISTENT 1-SCREEN SPLIT CAMERA / VOICE CALL DOCK (Stays live across Pair Room, Mission & Race!) -->
   <section class="pair-call-dock hidden" id="pairCallDock" aria-label="Pair Video and Voice Call">
     <div class="pair-call-head">
-      <span id="videoStatusText">🟡 Connecting Pair Call...</span>
+      <div>
+        <span id="videoStatusText">🟡 Connecting Pair Call...</span>
+        <div class="call-diag-line" id="callDiagText"></div>
+      </div>
       <div class="row">
         <button type="button" class="btn btn-soft btn-xs" id="toggleCompactCallBtn" onclick="window.ChickenPair.toggleCallCompact()">⤡ Thu gọn</button>
         <button type="button" class="btn btn-danger btn-xs" onclick="window.ChickenPair.endCall(true)">📵 End Call</button>
       </div>
     </div>
     <div class="split-camera-screen">
-      <div class="cam-pane mine">
+      <div class="cam-pane mine" id="localCamPane">
         <video id="localVideo" autoplay muted playsinline webkit-playsinline></video>
+        <div class="cam-placeholder" id="localCamPlaceholder">📷 Đang bật camera...</div>
         <div class="cam-tag" id="localCamTag">📹 Bạn</div>
       </div>
-      <div class="cam-pane theirs">
-        <video id="remoteVideo" autoplay playsinline webkit-playsinline></video>
+      <div class="cam-pane theirs" id="remoteCamPane" onclick="window.ChickenPair.unmuteRemoteVideo()">
+        <video id="remoteVideo" autoplay muted playsinline webkit-playsinline></video>
+        <div class="cam-placeholder" id="remoteCamPlaceholder">⏳ Đang chờ video từ bạn...</div>
+        <button type="button" class="remote-play-overlay hidden" id="remotePlayOverlay" onclick="event.stopPropagation(); window.ChickenPair.unmuteRemoteVideo()">▶️ Chạm để xem &amp; nghe bạn</button>
         <div class="cam-tag" id="remoteVideoLabel">📹 Bạn Đồng Hành</div>
       </div>
     </div>
     <div class="row center">
       <button type="button" class="btn btn-yellow btn-sm hidden" id="unmuteVideoBtn" onclick="window.ChickenPair.unmuteRemoteVideo()">🔊 Bật Tiếng Bạn</button>
+      <button type="button" class="btn btn-sky btn-sm hidden" id="reconnectCallBtn" onclick="window.ChickenPair.reconnectCall()">🔄 Kết nối lại</button>
       <button type="button" class="btn btn-soft btn-sm" id="toggleMicTrackBtn" onclick="window.ChickenPair.toggleMediaTrack('audio')">🎤 Mic ON</button>
       <button type="button" class="btn btn-soft btn-sm" id="toggleCamTrackBtn" onclick="window.ChickenPair.toggleMediaTrack('video')">📷 Cam ON</button>
       <button type="button" class="btn btn-soft btn-sm" onclick="window.ChickenPair.switchCamera()">🔄 Đổi Cam</button>
@@ -1105,7 +1112,7 @@
 <script src="./src/components/world-art.js?v=4"></script>
 <script src="./src/components/garden-scene.js?v=4"></script>
 <script src="./src/data/mission-data.js?v=4"></script>
-<script src="./src/pair.js?v=4"></script>
+<script src="./src/pair.js?v=6"></script>
 <script src="./src/mission.js?v=4"></script>
 <script src="./src/app.js?v=4"></script>
 </body>
